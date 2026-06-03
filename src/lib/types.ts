@@ -6,51 +6,54 @@
  * When you add a new column to the DB, update these types too.
  */
 
-// ─── Main task row from jira_tasks_snapshot table ───
-export interface JiraTask {
+// ─── Dynamic Column Definitions ───
+export interface SelectOption {
+  value: string;
+  label: string;
+  color?: string;
+}
+
+export interface ColumnDefinition {
   id: string;
+  project_id: string;
+  key: string;
+  label: string;
+  data_type: 'text' | 'number' | 'date' | 'boolean' | 'select' | 'multi_select' | 'user';
+  is_required: boolean;
+  is_sortable: boolean;
+  is_filterable: boolean;
+  is_editable: boolean;
+  is_visible: boolean;
+  is_system: boolean;
+  display_order: number;
+  width_px: number;
+  tooltip: string | null;
+  options: SelectOption[];
+  auto_source: 'webhook' | 'computed' | null;
+  compute_rule: string | null;
+  jira_field_path: string | null;
+  created_at: string;
+}
+
+// ─── Main task row from project_tasks table (Flexible Schema) ───
+export interface ProjectTask {
+  id: string;
+  project_id: string;
   owner_id: string;
-
-  // Jira core fields
-  jira_key: string;
-  summary: string;
-  description: string;
-  status: string;
-  resolution: string | null;
-  priority: string;
-  work_type: string;
-  story_points: number;
-  labels: string[];
-  assignees: string[];
-  reporter: string;
-
-  // Sprint context
+  
+  // Core system fields
+  jira_key: string | null;
   sprint_id: string | null;
   sprint_name: string | null;
   sprint_start_date: string | null;
   sprint_end_date: string | null;
-  sprint_binding_timestamp: string | null;
-
-  // Multi-tenant context
-  project_id?: string | null;
-
-  // Transition timestamps (set by webhook)
-  in_progress_at: string | null;
-  done_at: string | null;
-  issue_created_at: string | null;
-  issue_updated_at: string | null;
-
-  // Computed metric columns (set by webhook engine)
-  week_numbers: number[];
-  planned_in_sprint: boolean;
-  added_mid_sprint: boolean;
-  carry_forward: boolean;
-  lead_time_days: number | null;
-  reopened: boolean;
-
+  
+  // All user-defined/project-specific data
+  custom_fields: Record<string, any>;
+  
   // Raw Jira changelog for audit trail
   changelog_json: Record<string, unknown>[];
-
+  
   // Housekeeping
   created_at: string;
   updated_at: string;
@@ -112,6 +115,7 @@ export interface Project {
   slug: string;
   jira_project_key: string;
   webhook_secret: string | null;
+  field_mappings: Record<string, string>;
   status: "active" | "archived";
   created_by: string;
   created_at: string;

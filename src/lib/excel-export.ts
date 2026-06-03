@@ -10,35 +10,28 @@
  */
 
 import * as XLSX from "xlsx";
-import type { JiraTask } from "@/lib/types";
+import type { ProjectTask } from "./types";
 
 /**
  * Export the given tasks array to an Excel file and trigger download.
  * @param tasks - The filtered/sorted array of tasks currently visible
  * @param sheetName - Name for the Excel sheet (usually sprint name)
  */
-export function exportToExcel(tasks: JiraTask[], sheetName: string = "Sprint Data") {
+export async function exportTasksToExcel(tasks: ProjectTask[], sheetName: string = "Sprint Data") {
   // Map the raw data to clean, human-readable column names
   const exportData = tasks.map((task) => ({
-    "Jira Key": task.jira_key,
-    "Summary": task.summary,
-    "Status": task.status,
-    "Priority": task.priority,
-    "Work Type": task.work_type,
-    "Story Points": task.story_points,
-    "Assignees": (task.assignees || []).join(", "),
-    "Reporter": task.reporter,
-    "Sprint": task.sprint_name || "—",
-    "Week Numbers": (task.week_numbers || []).join(", "),
-    "Planned in Sprint": task.planned_in_sprint ? "Yes" : "No",
-    "Added Mid-Sprint": task.added_mid_sprint ? "Yes" : "No",
-    "Carry Forward": task.carry_forward ? "Yes" : "No",
-    "Lead Time (Days)": task.lead_time_days ?? "—",
-    "Reopened": task.reopened ? "Yes" : "No",
-    "Resolution": task.resolution || "—",
-    "Labels": (task.labels || []).join(", "),
-    "Created": formatDate(task.issue_created_at),
-    "Updated": formatDate(task.issue_updated_at),
+    "Jira Key": task.jira_key || "-",
+    "Summary": task.custom_fields?.summary || "-",
+    "Status": task.custom_fields?.status || "-",
+    "Priority": task.custom_fields?.priority || "-",
+    "Work Type": task.custom_fields?.work_type || "-",
+    "Story Points": task.custom_fields?.story_points || "-",
+    "Planned in Sprint": task.custom_fields?.planned_in_sprint ? "Yes" : "No",
+    "Added Mid-Sprint": task.custom_fields?.added_mid_sprint ? "Yes" : "No",
+    "Carry Forward": task.custom_fields?.carry_forward ? "Yes" : "No",
+    "Lead Time (Days)": task.custom_fields?.lead_time_days !== null && task.custom_fields?.lead_time_days !== undefined ? task.custom_fields.lead_time_days : "-",
+    "Assignees": Array.isArray(task.custom_fields?.assignees) ? task.custom_fields.assignees.join(", ") : (task.custom_fields?.assignees || "-"),
+    "Owner": task.owner_id || "-",
   }));
 
   // Create workbook and worksheet

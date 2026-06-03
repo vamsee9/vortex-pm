@@ -1,23 +1,6 @@
-/**
- * data-table/data-table.tsx
- * -------------------------
- * The main interactive data table for the Sprint Board.
- * Renders tasks in a sortable, filterable table with row actions.
- *
- * Features:
- * - Client-side sorting by clicking column headers
- * - Resizable columns (click and drag borders)
- * - Row actions dropdown (duplicate, comment, delete)
- * - Comments dialog integration
- * - Empty state for when no tasks match filters
- *
- * Sorting is done client-side for speed — the data is already
- * fetched and filtered by the server component.
- */
-
 "use client";
 
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback, useTransition } from "react";
 import {
   Table,
   TableBody,
@@ -26,25 +9,28 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { columns, SortableHeader } from "./columns";
+import { buildColumnsFromDefinitions, SortableHeader, DataTableColumnDef } from "./columns";
 import { DataTableToolbar } from "./toolbar";
 import { RowActions } from "./row-actions";
 import { CommentsDialog } from "@/components/comments-dialog";
-import type { JiraTask } from "@/lib/types";
-import { Inbox } from "lucide-react";
+import type { ProjectTask, ColumnDefinition } from "@/lib/types";
+import { Inbox, Loader2 } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { updateTaskCustomField } from "@/lib/actions/tasks";
+import { toast } from "sonner";
 
 interface DataTableProps {
-  tasks: JiraTask[];
+  tasks: ProjectTask[];
   currentUserId: string;
   sprintName?: string;
+  columnDefs: ColumnDefinition[];
 }
 
-export function DataTable({ tasks, currentUserId, sprintName }: DataTableProps) {
+export function DataTable({ tasks, currentUserId, sprintName, columnDefs }: DataTableProps) {
   // Sorting state
   const [sortKey, setSortKey] = useState<string>("updated_at");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
@@ -53,28 +39,25 @@ export function DataTable({ tasks, currentUserId, sprintName }: DataTableProps) 
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [selectedTaskKey, setSelectedTaskKey] = useState<string>("");
+  const [isPending, startTransition] = useTransition();
+
+  // Re-build column renderers whenever schema changes
+  const columns = useMemo(() => {
+    return buildColumnsFromDefinitions(columnDefs);
+  }, [columnDefs]);
 
   // ─── Column Resizing State ───
-  // Default widths parsed from the Tailwind classes in columns.tsx,
-  // or a fallback of 100px.
   const initialWidths = useMemo(() => {
     const widths: Record<string, number> = {};
     columns.forEach((col) => {
-      // Very naive parser to convert Tailwind w-[100px] or min-w-[200px] to numbers
-      let w = 100;
-      if (col.width) {
-        const match = col.width.match(/\[(\d+)px\]/);
-        if (match) w = parseInt(match[1], 10);
-      }
-      widths[col.key] = w;
+      widths[col.key] = col.def.width_px || 120;
     });
     return widths;
-  }, []);
+  }, [columns]);
 
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(initialWidths);
   const [isResizing, setIsResizing] = useState<string | null>(null);
   
-  // Refs to track drag state across mouse events without triggering re-renders
   const resizeState = useRef<{ startX: number; startWidth: number } | null>(null);
 
   const onMouseDown = (e: React.MouseEvent, colKey: string) => {
@@ -88,14 +71,9 @@ export function DataTable({ tasks, currentUserId, sprintName }: DataTableProps) 
 
   const onMouseMove = useCallback((e: MouseEvent) => {
     if (!isResizing || !resizeState.current) return;
-    
     const delta = e.clientX - resizeState.current.startX;
-    const newWidth = Math.max(50, resizeState.current.startWidth + delta); // Minimum 50px
-
-    setColumnWidths((prev) => ({
-      ...prev,
-      [isResizing]: newWidth,
-    }));
+    const newWidth = Math.max(50, resizeState.current.startWidth + delta);
+    setColumnWidths((prev) => ({ ...prev, [isResizing]: newWidth }));
   }, [isResizing]);
 
   const onMouseUp = useCallback(() => {
@@ -105,19 +83,16 @@ export function DataTable({ tasks, currentUserId, sprintName }: DataTableProps) 
     }
   }, [isResizing]);
 
-  // Bind global mouse events for the drag interaction
   useEffect(() => {
     if (isResizing) {
       window.addEventListener("mousemove", onMouseMove);
       window.addEventListener("mouseup", onMouseUp);
-      // Change cursor globally so it doesn't flicker when leaving the handle
       document.body.style.cursor = "col-resize";
     } else {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
       document.body.style.cursor = "";
     }
-
     return () => {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
@@ -129,39 +104,46 @@ export function DataTable({ tasks, currentUserId, sprintName }: DataTableProps) 
   // Handle column sort toggling
   function handleSort(key: string) {
     if (sortKey === key) {
-      // Same column — toggle direction
       setSortDirection(sortDirection === "asc" ? "desc" : "asc");
     } else {
-      // New column — default to ascending
       setSortKey(key);
       setSortDirection("asc");
     }
   }
 
+  // Handle inline edits
+  const handleEditCell = (taskId: string, key: string, value: any) => {
+    startTransition(async () => {
+      const res = await updateTaskCustomField(taskId, key, value);
+      if (!res.success) {
+        toast.error(`Failed to update ${key}: ${res.error}`);
+      } else {
+        toast.success(`Updated successfully`);
+      }
+    });
+  };
+
   // Sort the tasks client-side
   const sortedTasks = useMemo(() => {
     const sorted = [...tasks].sort((a, b) => {
-      const aValue = a[sortKey as keyof JiraTask];
-      const bValue = b[sortKey as keyof JiraTask];
+      // First check core fields, then custom_fields
+      const aValue = (a as any)[sortKey] ?? a.custom_fields?.[sortKey];
+      const bValue = (b as any)[sortKey] ?? b.custom_fields?.[sortKey];
 
-      // Handle null/undefined values — push them to the end
       if (aValue == null && bValue == null) return 0;
       if (aValue == null) return 1;
       if (bValue == null) return -1;
 
-      // String comparison
       if (typeof aValue === "string" && typeof bValue === "string") {
         return sortDirection === "asc"
           ? aValue.localeCompare(bValue)
           : bValue.localeCompare(aValue);
       }
 
-      // Number comparison
       if (typeof aValue === "number" && typeof bValue === "number") {
         return sortDirection === "asc" ? aValue - bValue : bValue - aValue;
       }
 
-      // Boolean comparison
       if (typeof aValue === "boolean" && typeof bValue === "boolean") {
         return sortDirection === "asc"
           ? Number(aValue) - Number(bValue)
@@ -174,7 +156,6 @@ export function DataTable({ tasks, currentUserId, sprintName }: DataTableProps) 
     return sorted;
   }, [tasks, sortKey, sortDirection]);
 
-  // Open comments dialog for a specific task
   function openComments(taskId: string) {
     const task = tasks.find((t) => t.id === taskId);
     setSelectedTaskId(taskId);
@@ -183,24 +164,24 @@ export function DataTable({ tasks, currentUserId, sprintName }: DataTableProps) 
   }
 
   return (
-    <div>
+    <div className="flex flex-col h-full space-y-4">
       {/* Filter toolbar */}
-      <DataTableToolbar tasks={sortedTasks} sprintName={sprintName} />
+      <DataTableToolbar tasks={sortedTasks} sprintName={sprintName} columnDefs={columnDefs} />
 
-      {/* Table — overflow-x-auto allows horizontal scrolling if columns get too wide */}
-      <div className="rounded-lg border border-neutral-800 overflow-x-auto">
-        <Table className="table-fixed min-w-max">
+      {/* Table — Excel-style grid layout */}
+      <div className="relative border border-[#4F62C0]/30 overflow-x-auto shadow-xl bg-neutral-950">
+        <Table className="table-fixed min-w-max border-collapse">
           <TableHeader>
-            <TableRow className="border-neutral-800 bg-neutral-900/50 hover:bg-neutral-900/50">
+            <TableRow className="bg-[#4F62C0] hover:bg-[#4F62C0] border-b-0 border-[#4F62C0]/50">
               {columns.map((col) => {
-                const width = columnWidths[col.key];
+                const width = columnWidths[col.key] || col.def.width_px || 120;
                 return (
                   <TableHead
                     key={col.key}
-                    className="text-neutral-400 relative group"
+                    className="text-white relative group h-10 p-0 border-r border-[#ffffff20] last:border-r-0"
                     style={{ width: `${width}px` }}
                   >
-                    <div className="truncate pr-4">
+                    <div className="truncate px-2 flex items-center h-full">
                       {col.sortable ? (
                         <SortableHeader
                           label={col.label}
@@ -213,7 +194,7 @@ export function DataTable({ tasks, currentUserId, sprintName }: DataTableProps) 
                       ) : col.tooltip ? (
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <span className="text-xs font-medium uppercase tracking-wider cursor-default">
+                            <span className="text-xs font-semibold uppercase tracking-wider cursor-default">
                               {col.label}
                             </span>
                           </TooltipTrigger>
@@ -222,7 +203,7 @@ export function DataTable({ tasks, currentUserId, sprintName }: DataTableProps) 
                           </TooltipContent>
                         </Tooltip>
                       ) : (
-                        <span className="text-xs font-medium uppercase tracking-wider">
+                        <span className="text-xs font-semibold uppercase tracking-wider">
                           {col.label}
                         </span>
                       )}
@@ -230,28 +211,27 @@ export function DataTable({ tasks, currentUserId, sprintName }: DataTableProps) 
                     
                     {/* Resize handle */}
                     <div
-                      className={`col-resize-handle ${isResizing === col.key ? "is-resizing" : ""}`}
+                      className={`absolute right-0 top-0 w-1 h-full cursor-col-resize hover:bg-white/30 z-10 ${isResizing === col.key ? "bg-white/50" : ""}`}
                       onMouseDown={(e) => onMouseDown(e, col.key)}
                     />
                   </TableHead>
                 );
               })}
-              {/* Actions column (fixed width, not resizable) */}
-              <TableHead className="w-[50px] sticky right-0 bg-neutral-900/50 backdrop-blur border-l border-neutral-800" />
+              <TableHead className="w-[50px] sticky right-0 bg-[#4F62C0] border-l border-[#ffffff20] p-0" />
             </TableRow>
           </TableHeader>
-          <TableBody>
+          <TableBody className="bg-neutral-900/50">
             {sortedTasks.length === 0 ? (
               <TableRow>
                 <TableCell
                   colSpan={columns.length + 1}
-                  className="h-[200px] text-center"
+                  className="h-[200px] text-center border-b border-neutral-800"
                 >
                   <div className="flex flex-col items-center justify-center gap-2 text-neutral-500">
                     <Inbox className="w-10 h-10" />
                     <p className="text-sm">No tasks found</p>
                     <p className="text-xs">
-                      Try adjusting your filters or wait for webhook data.
+                      Try adjusting your filters or add a new task.
                     </p>
                   </div>
                 </TableCell>
@@ -263,24 +243,28 @@ export function DataTable({ tasks, currentUserId, sprintName }: DataTableProps) 
                 return (
                   <TableRow
                     key={task.id}
-                    className="border-neutral-800 hover:bg-neutral-800/30 transition-colors"
+                    className="border-b border-neutral-800/80 hover:bg-neutral-800 transition-colors group/row"
                   >
                     {columns.map((col) => (
                       <TableCell 
                         key={col.key} 
-                        style={{ width: `${columnWidths[col.key]}px` }}
-                        className="truncate overflow-hidden"
+                        style={{ width: `${columnWidths[col.key] || col.def.width_px || 120}px` }}
+                        className="truncate overflow-hidden p-1 px-2 border-r border-neutral-800/50 last:border-r-0 h-10"
                       >
-                        {col.render(task, isOwner)}
+                        {col.render(task, isOwner, handleEditCell)}
                       </TableCell>
                     ))}
-                    <TableCell className="sticky right-0 bg-neutral-950 border-l border-neutral-800 p-0 text-center">
+                    <TableCell className="sticky right-0 bg-neutral-900 group-hover/row:bg-neutral-800 border-l border-neutral-800 p-0 text-center transition-colors">
                       <div className="flex items-center justify-center h-full">
-                        <RowActions
-                          task={task}
-                          isOwner={isOwner}
-                          onOpenComments={openComments}
-                        />
+                        {isPending ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-neutral-500" />
+                        ) : (
+                          <RowActions
+                            task={task}
+                            isOwner={isOwner}
+                            onOpenComments={openComments}
+                          />
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -292,7 +276,7 @@ export function DataTable({ tasks, currentUserId, sprintName }: DataTableProps) 
       </div>
 
       {/* Task count footer */}
-      <div className="flex items-center justify-between pt-3 text-xs text-neutral-500">
+      <div className="flex items-center justify-between text-xs text-neutral-500">
         <span>
           Showing {sortedTasks.length} task{sortedTasks.length !== 1 ? "s" : ""}
         </span>
@@ -300,13 +284,12 @@ export function DataTable({ tasks, currentUserId, sprintName }: DataTableProps) 
           <span>
             Total SP:{" "}
             {sortedTasks
-              .reduce((sum, t) => sum + (t.story_points || 0), 0)
+              .reduce((sum, t) => sum + (Number(t.custom_fields?.story_points) || 0), 0)
               .toFixed(1)}
           </span>
         )}
       </div>
 
-      {/* Comments Dialog */}
       <CommentsDialog
         taskId={selectedTaskId}
         taskKey={selectedTaskKey}

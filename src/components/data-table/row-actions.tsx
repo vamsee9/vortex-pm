@@ -23,10 +23,10 @@ import {
 import { MoreHorizontal, Copy, MessageSquare, Trash2 } from "lucide-react";
 import { duplicateTask, deleteTask } from "@/lib/actions/tasks";
 import { toast } from "sonner";
-import type { JiraTask } from "@/lib/types";
+import type { ProjectTask } from "@/lib/types";
 
 interface RowActionsProps {
-  task: JiraTask;
+  task: ProjectTask;
   isOwner: boolean;
   onOpenComments: (taskId: string) => void;
 }

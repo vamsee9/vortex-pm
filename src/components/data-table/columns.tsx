@@ -1,13 +1,3 @@
-/**
- * data-table/columns.tsx
- * ----------------------
- * Column definitions for the Sprint Board data table.
- * Each column defines how a field from JiraTask should be rendered.
- *
- * Uses Shadcn/ui Badge, Checkbox, and Tooltip components for rich display.
- * Columns are modular — add or remove columns by editing this array.
- */
-
 "use client";
 
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +7,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type { JiraTask } from "@/lib/types";
+import type { ProjectTask, ColumnDefinition } from "@/lib/types";
 import {
   ArrowUpDown,
   AlertTriangle,
@@ -26,19 +16,11 @@ import {
   Minus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CellEditor } from "./cell-editor";
 
-// ─── Column definition type ───
-export interface ColumnDef {
-  key: string;
-  label: string;
-  sortable: boolean;
-  width?: string;
-  tooltip?: string; // Brief description shown on hover
-  render: (task: JiraTask, isOwner: boolean) => React.ReactNode;
-}
-
-// ─── Priority icons mapping ───
-function PriorityIcon({ priority }: { priority: string }) {
+// ─── Priority icons mapping (fallback/default style) ───
+export function PriorityIcon({ priority }: { priority: string }) {
+  if (!priority) return <Minus className="w-3.5 h-3.5 text-neutral-400" />;
   switch (priority.toLowerCase()) {
     case "highest":
     case "critical":
@@ -56,217 +38,218 @@ function PriorityIcon({ priority }: { priority: string }) {
   }
 }
 
-// ─── Status badge colour mapping ───
-function getStatusColor(status: string): string {
-  switch (status.toLowerCase()) {
-    case "done":
-    case "resolved":
-    case "verified":
-    case "closed":
-      return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
-    case "in progress":
-    case "in review":
-      return "bg-blue-500/10 text-blue-400 border-blue-500/20";
-    case "to do":
-    case "open":
-    case "backlog":
-      return "bg-neutral-500/10 text-neutral-400 border-neutral-500/20";
-    case "blocked":
-      return "bg-red-500/10 text-red-400 border-red-500/20";
-    default:
-      return "bg-neutral-500/10 text-neutral-400 border-neutral-500/20";
-  }
-}
-
 // ─── Lead time colour (green = fast, yellow = ok, red = slow) ───
-function getLeadTimeColor(days: number | null): string {
-  if (days === null) return "text-neutral-500";
+export function getLeadTimeColor(days: number | null): string {
+  if (days === null || days === undefined) return "text-neutral-500";
   if (days <= 3) return "text-emerald-400";
   if (days <= 7) return "text-amber-400";
   return "text-red-400";
 }
 
-// ────────────────────────────────────────────────────────────
-// Column Definitions
-// ────────────────────────────────────────────────────────────
-export const columns: ColumnDef[] = [
-  {
-    key: "jira_key",
-    label: "Key",
-    sortable: true,
-    tooltip: "Unique Jira issue identifier",
-    width: "w-[100px]",
-    render: (task) => (
-      <Badge
-        variant="secondary"
-        className="bg-blue-500/10 text-blue-400 border-blue-500/20 font-mono text-xs"
-      >
-        {task.jira_key}
-      </Badge>
-    ),
-  },
-  {
-    key: "summary",
-    label: "Summary",
-    sortable: true,
-    tooltip: "Task title from Jira",
-    width: "min-w-[200px] max-w-[350px]",
-    render: (task) => (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="text-sm text-neutral-200 truncate block cursor-default">
-            {task.summary}
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" className="max-w-sm bg-neutral-800 border-neutral-700 text-neutral-200">
-          {task.summary}
-        </TooltipContent>
-      </Tooltip>
-    ),
-  },
-  {
-    key: "status",
-    label: "Status",
-    sortable: true,
-    tooltip: "Current workflow status of the task",
-    width: "w-[120px]",
-    render: (task) => (
-      <Badge variant="secondary" className={getStatusColor(task.status)}>
-        {task.status}
-      </Badge>
-    ),
-  },
-  {
-    key: "priority",
-    label: "Priority",
-    sortable: true,
-    tooltip: "Urgency level assigned in Jira",
-    width: "w-[100px]",
-    render: (task) => (
-      <div className="flex items-center gap-1.5">
-        <PriorityIcon priority={task.priority} />
-        <span className="text-sm text-neutral-300">{task.priority}</span>
-      </div>
-    ),
-  },
-  {
-    key: "work_type",
-    label: "Type",
-    sortable: true,
-    tooltip: "Issue type — Story, Bug, Task, etc.",
-    width: "w-[90px]",
-    render: (task) => (
-      <span className="text-sm text-neutral-400">{task.work_type}</span>
-    ),
-  },
-  {
-    key: "story_points",
-    label: "SP",
-    sortable: true,
-    tooltip: "Story Points — effort estimate for the task",
-    width: "w-[60px]",
-    render: (task) => (
-      <span className="text-sm text-neutral-300 font-mono">
-        {task.story_points}
-      </span>
-    ),
-  },
-  {
-    key: "planned_in_sprint",
-    label: "Planned",
-    sortable: false,
-    tooltip: "Was this task present at sprint kickoff?",
-    width: "w-[70px]",
-    render: (task) => (
-      <div className="flex justify-center">
-        <Checkbox
-          checked={task.planned_in_sprint}
-          disabled
-          className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
-        />
-      </div>
-    ),
-  },
-  {
-    key: "added_mid_sprint",
-    label: "Ad-hoc",
-    sortable: false,
-    tooltip: "Injected after the sprint had already started",
-    width: "w-[70px]",
-    render: (task) => (
-      <div className="flex justify-center">
-        {task.added_mid_sprint && (
-          <Badge variant="secondary" className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-xs">
-            Yes
-          </Badge>
-        )}
-      </div>
-    ),
-  },
-  {
-    key: "carry_forward",
-    label: "Carry",
-    sortable: false,
-    tooltip: "Sprint closed but task was not completed",
-    width: "w-[70px]",
-    render: (task) => (
-      <div className="flex justify-center">
-        {task.carry_forward && (
-          <AlertTriangle className="w-4 h-4 text-amber-400" />
-        )}
-      </div>
-    ),
-  },
-  {
-    key: "lead_time_days",
-    label: "Lead Time",
-    sortable: true,
-    tooltip: "Business days from In Progress to Done",
-    width: "w-[90px]",
-    render: (task) => (
-      <span className={`text-sm font-mono ${getLeadTimeColor(task.lead_time_days)}`}>
-        {task.lead_time_days !== null ? `${task.lead_time_days}d` : "—"}
-      </span>
-    ),
-  },
-  {
-    key: "assignees",
-    label: "Assignees",
-    sortable: false,
-    tooltip: "Team members assigned to this task",
-    width: "w-[140px]",
-    render: (task) => (
-      <div className="flex items-center gap-1">
-        {task.assignees?.length > 0 ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="flex -space-x-2">
-                {task.assignees.slice(0, 3).map((name, idx) => (
-                  <div
-                    key={idx}
-                    className="w-6 h-6 rounded-full bg-neutral-700 border-2 border-neutral-900 flex items-center justify-center text-[10px] text-neutral-300 font-medium"
-                  >
-                    {name.charAt(0).toUpperCase()}
-                  </div>
-                ))}
-                {task.assignees.length > 3 && (
-                  <div className="w-6 h-6 rounded-full bg-neutral-600 border-2 border-neutral-900 flex items-center justify-center text-[10px] text-neutral-300">
-                    +{task.assignees.length - 3}
-                  </div>
+// ─── Column definition interface for React Table ───
+export interface DataTableColumnDef {
+  key: string;
+  label: string;
+  sortable: boolean;
+  width?: string;
+  tooltip?: string;
+  def: ColumnDefinition; // The underlying schema definition
+  render: (
+    task: ProjectTask, 
+    isOwner: boolean, 
+    onEdit: (taskId: string, key: string, value: any) => void
+  ) => React.ReactNode;
+}
+
+// ─── Dynamic Column Builder ───
+export function buildColumnsFromDefinitions(
+  columnDefs: ColumnDefinition[]
+): DataTableColumnDef[] {
+  // Sort columns by display_order, filter out invisible ones
+  const visibleDefs = columnDefs
+    .filter(c => c.is_visible)
+    .sort((a, b) => a.display_order - b.display_order);
+
+  const columns: DataTableColumnDef[] = [];
+
+  // Always prepend Jira Key if it's not explicitly in the custom definitions
+  // (We could also make jira_key a required custom field)
+  
+  for (const def of visibleDefs) {
+    columns.push({
+      key: def.key,
+      label: def.label,
+      sortable: def.is_sortable,
+      width: `w-[${def.width_px}px]`,
+      tooltip: def.tooltip || undefined,
+      def,
+      render: (task, isOwner, onEdit) => {
+        // Read the value from custom_fields safely
+        const val = task.custom_fields ? task.custom_fields[def.key] : undefined;
+
+        // System fallbacks for specific known computed metrics
+        if (def.is_system && def.auto_source === "computed") {
+          if (def.key === "planned_in_sprint") {
+            return (
+              <div className="flex justify-center">
+                <Checkbox
+                  checked={!!val}
+                  disabled
+                  className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
+                />
+              </div>
+            );
+          }
+          if (def.key === "added_mid_sprint") {
+            return (
+              <div className="flex justify-center">
+                {!!val && (
+                  <Badge variant="secondary" className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-xs rounded-none">
+                    Yes
+                  </Badge>
                 )}
               </div>
-            </TooltipTrigger>
-            <TooltipContent className="bg-neutral-800 border-neutral-700 text-neutral-200">
-              {task.assignees.join(", ")}
-            </TooltipContent>
-          </Tooltip>
-        ) : (
-          <span className="text-xs text-neutral-500">Unassigned</span>
-        )}
-      </div>
-    ),
-  },
-];
+            );
+          }
+          if (def.key === "carry_forward") {
+            return (
+              <div className="flex justify-center">
+                {!!val && (
+                  <AlertTriangle className="w-4 h-4 text-amber-400" />
+                )}
+              </div>
+            );
+          }
+          if (def.key === "lead_time_days") {
+            return (
+              <span className={`text-sm font-mono ${getLeadTimeColor(val as number)}`}>
+                {val !== null && val !== undefined ? `${val}d` : "—"}
+              </span>
+            );
+          }
+        }
+
+        // Display based on data_type
+        switch (def.data_type) {
+          case "boolean":
+            return (
+              <div className="flex justify-center">
+                <Checkbox
+                  checked={!!val}
+                  disabled={!def.is_editable || !isOwner}
+                  onCheckedChange={(checked) => {
+                    if (def.is_editable && isOwner) {
+                      onEdit(task.id, def.key, !!checked);
+                    }
+                  }}
+                  className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
+                />
+              </div>
+            );
+
+          case "select": {
+            // Find option to get color
+            const opt = def.options?.find(o => o.value === val);
+            // Default styling if no explicit color
+            let colorStyle = {
+              backgroundColor: opt?.color ? `${opt.color}1a` : "rgba(107, 114, 128, 0.1)",
+              color: opt?.color || "#9ca3af",
+              borderColor: opt?.color ? `${opt.color}33` : "rgba(107, 114, 128, 0.2)"
+            };
+
+            // Custom UI override for priority
+            if (def.key === "priority") {
+              return (
+                <CellEditor def={def} value={val} onSave={(newVal) => onEdit(task.id, def.key, newVal)}>
+                  <div className="flex items-center gap-1.5 cursor-pointer">
+                    <PriorityIcon priority={val as string} />
+                    <span className="text-sm text-neutral-300">{val || "—"}</span>
+                  </div>
+                </CellEditor>
+              );
+            }
+
+            return (
+              <CellEditor def={def} value={val} onSave={(newVal) => onEdit(task.id, def.key, newVal)}>
+                <Badge 
+                  variant="secondary" 
+                  style={colorStyle}
+                  className="cursor-pointer font-medium rounded-none border"
+                >
+                  {val || "—"}
+                </Badge>
+              </CellEditor>
+            );
+          }
+
+          case "user": {
+            const assignees = Array.isArray(val) ? val : (val ? [val] : []);
+            return (
+              <div className="flex items-center gap-1 cursor-pointer">
+                {assignees.length > 0 ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex -space-x-2">
+                        {assignees.slice(0, 3).map((name: string, idx: number) => (
+                          <div
+                            key={idx}
+                            className="w-6 h-6 rounded-full bg-neutral-700 border-2 border-neutral-900 flex items-center justify-center text-[10px] text-neutral-300 font-medium"
+                          >
+                            {name.charAt(0).toUpperCase()}
+                          </div>
+                        ))}
+                        {assignees.length > 3 && (
+                          <div className="w-6 h-6 rounded-full bg-neutral-600 border-2 border-neutral-900 flex items-center justify-center text-[10px] text-neutral-300">
+                            +{assignees.length - 3}
+                          </div>
+                        )}
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent className="bg-neutral-800 border-neutral-700 text-neutral-200">
+                      {assignees.join(", ")}
+                    </TooltipContent>
+                  </Tooltip>
+                ) : (
+                  <span className="text-xs text-neutral-500">Unassigned</span>
+                )}
+              </div>
+            );
+          }
+
+          case "number":
+            return (
+              <CellEditor def={def} value={val} onSave={(newVal) => onEdit(task.id, def.key, newVal)}>
+                <span className="text-sm text-neutral-300 font-mono cursor-pointer">
+                  {val !== null && val !== undefined ? val : "—"}
+                </span>
+              </CellEditor>
+            );
+
+          case "text":
+          default:
+            return (
+              <CellEditor def={def} value={val} onSave={(newVal) => onEdit(task.id, def.key, newVal)}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="text-sm text-neutral-200 truncate block cursor-pointer">
+                      {val || "—"}
+                    </span>
+                  </TooltipTrigger>
+                  {val && (
+                    <TooltipContent side="bottom" className="max-w-sm bg-neutral-800 border-neutral-700 text-neutral-200">
+                      {val}
+                    </TooltipContent>
+                  )}
+                </Tooltip>
+              </CellEditor>
+            );
+        }
+      }
+    });
+  }
+
+  return columns;
+}
 
 // ─── Sortable column header ───
 export function SortableHeader({
@@ -291,11 +274,11 @@ export function SortableHeader({
       variant="ghost"
       size="sm"
       onClick={() => onSort(sortKey)}
-      className="text-neutral-400 hover:text-neutral-200 -ml-3 font-medium"
+      className="text-neutral-200 hover:text-white -ml-3 font-medium uppercase text-xs rounded-none h-8 px-2 tracking-wider"
     >
       {label}
       <ArrowUpDown
-        className={`ml-1 w-3.5 h-3.5 ${isActive ? "text-emerald-400" : ""}`}
+        className={`ml-1 w-3.5 h-3.5 ${isActive ? "text-emerald-400" : "text-neutral-400"}`}
       />
     </Button>
   );

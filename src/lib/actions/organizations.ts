@@ -7,9 +7,35 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { revalidatePath } from "next/cache";
 import { isDemoModeActive, getMockOrganizations } from "@/lib/demo-mode";
 import type { Organization } from "@/lib/types";
+import crypto from "crypto";
+
+function generateTempPassword(): string {
+  const length = 16;
+  const uppercase = "ABCDEFGHJKLMNPQRSTUVWXYZ"; // Removed I, O
+  const lowercase = "abcdefghjkmnpqrstuvwxyz"; // Removed i, l, o
+  const numbers = "23456789"; // Removed 0, 1
+  const special = "#$@!%&*?";
+
+  let password = "";
+  password += uppercase[crypto.randomInt(uppercase.length)];
+  password += lowercase[crypto.randomInt(lowercase.length)];
+  password += numbers[crypto.randomInt(numbers.length)];
+  password += special[crypto.randomInt(special.length)];
+
+  const allChars = uppercase + lowercase + numbers + special;
+  for (let i = password.length; i < length; i++) {
+    password += allChars[crypto.randomInt(allChars.length)];
+  }
+
+  return password
+    .split("")
+    .sort(() => crypto.randomInt(3) - 1)
+    .join("");
+}
 
 export async function fetchOrganizations(): Promise<Organization[]> {
   if (await isDemoModeActive()) {
@@ -31,36 +57,98 @@ export async function fetchOrganizations(): Promise<Organization[]> {
   return data as Organization[];
 }
 
-export async function createOrganization(name: string, slug: string) {
+export async function createOrganizationWithAdmin(
+  orgName: string, 
+  orgSlug: string, 
+  adminUsername: string, 
+  adminName: string, 
+  adminEmail: string
+) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  if (!user) throw new Error("Not authenticated");
+  if (!user || user.user_metadata?.role !== "admin") {
+    throw new Error("Only global admins can create organizations");
+  }
 
-  // 1. Create the org
-  const { data: org, error: orgError } = await supabase
+  const adminClient = createAdminClient();
+
+  // 1. Create the Organization
+  const { data: org, error: orgError } = await adminClient
     .from("organizations")
-    .insert([{ name, slug, created_by: user.id }])
+    .insert([{ name: orgName, slug: orgSlug, created_by: user.id }])
     .select()
     .single();
 
   if (orgError) {
-    throw new Error(orgError.message);
+    throw new Error(`Organization creation failed: ${orgError.message}`);
   }
 
-  // 2. Add creator as owner in org_members
-  const { error: memberError } = await supabase
+  // 2. Generate temporary password
+  const tempPassword = generateTempPassword();
+  const finalEmail = adminEmail || `${adminUsername}@${org.slug}.vortex`;
+
+  // 3. Create the Admin User in Auth
+  const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
+    email: finalEmail,
+    password: tempPassword,
+    email_confirm: true,
+    user_metadata: {
+      display_name: adminName,
+      username: adminUsername,
+      role: "admin", // They are an Org Admin
+      must_change_password: true,
+    },
+  });
+
+  if (authError) {
+    // Rollback Organization
+    await adminClient.from("organizations").delete().eq("id", org.id);
+    throw new Error(`Failed to create Org Admin user: ${authError.message}`);
+  }
+
+  const newUserId = authData.user.id;
+
+  // 4. Create Profile
+  const { error: profileError } = await adminClient
+    .from("profiles")
+    .insert({
+      id: newUserId,
+      username: adminUsername,
+      email: finalEmail,
+      org_id: org.id,
+      role: "admin",
+    });
+
+  if (profileError) {
+    // Rollback User and Org
+    await adminClient.auth.admin.deleteUser(newUserId);
+    await adminClient.from("organizations").delete().eq("id", org.id);
+    throw new Error(`Failed to create user profile: ${profileError.message}`);
+  }
+
+  // 5. Add to org_members as owner
+  const { error: memberError } = await adminClient
     .from("org_members")
-    .insert([{ org_id: org.id, user_id: user.id, role: "owner" }]);
+    .insert([{ org_id: org.id, user_id: newUserId, role: "owner" }]);
     
   if (memberError) {
-    console.error("Failed to add owner to org_members:", memberError);
-    // Ideally we'd rollback here, but Supabase JS doesn't support transactions easily without RPC.
-    // For this MVP, we proceed.
+    // Rollback Profile, User, and Org
+    await adminClient.from("profiles").delete().eq("id", newUserId);
+    await adminClient.auth.admin.deleteUser(newUserId);
+    await adminClient.from("organizations").delete().eq("id", org.id);
+    throw new Error(`Failed to assign organization owner: ${memberError.message}`);
   }
 
   revalidatePath("/orgs");
-  return org as Organization;
+  
+  return {
+    organization: org as Organization,
+    adminCredentials: {
+      email: finalEmail,
+      password: tempPassword
+    }
+  };
 }
 
 export async function deleteOrganization(id: string) {
@@ -73,6 +161,41 @@ export async function deleteOrganization(id: string) {
 
   if (error) {
     throw new Error(error.message);
+  }
+
+  revalidatePath("/orgs");
+}
+
+export async function deleteOrganizationCascading(id: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error("Not authenticated");
+  }
+
+  // Double check if the user is a global admin or org admin
+  const isGlobalAdmin = user.user_metadata?.role === "admin";
+  const adminClient = createAdminClient();
+
+  // 1. Delete the organization
+  const { error: orgError } = await adminClient
+    .from("organizations")
+    .delete()
+    .eq("id", id);
+
+  if (orgError) {
+    throw new Error(`Failed to delete organization: ${orgError.message}`);
+  }
+
+  // 2. If the user is NOT a global admin, purge their user account
+  if (!isGlobalAdmin) {
+    const { error: authError } = await adminClient.auth.admin.deleteUser(user.id);
+    if (authError) {
+      console.error(`Failed to delete user account ${user.id} during org cascade delete:`, authError);
+      // Even if user deletion fails, org is already deleted (cascade achieved via ON DELETE CASCADE in db for projects/tasks etc.)
+      throw new Error(`Organization deleted, but failed to delete user account: ${authError.message}`);
+    }
   }
 
   revalidatePath("/orgs");

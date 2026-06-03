@@ -20,6 +20,7 @@ import { Suspense } from "react";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { fetchTasks, fetchSprints } from "@/lib/actions/tasks";
+import { fetchColumnDefinitions, seedDefaultColumns } from "@/lib/actions/column-definitions";
 import { DataTable } from "@/components/data-table/data-table";
 import { TableSkeleton } from "@/components/loading-skeleton";
 
@@ -68,11 +69,20 @@ async function BoardContent({ searchParams }: BoardPageProps) {
     search: params.search || "",
   });
 
+  let columnDefs = activeProjectId ? await fetchColumnDefinitions(activeProjectId) : [];
+
+  // Auto-seed default columns if the project is brand new and has none
+  if (activeProjectId && columnDefs.length === 0) {
+    await seedDefaultColumns(activeProjectId);
+    columnDefs = await fetchColumnDefinitions(activeProjectId);
+  }
+
   return (
     <DataTable
       tasks={tasks}
       currentUserId={user.id}
       sprintName={selectedSprint?.sprint_name}
+      columnDefs={columnDefs}
     />
   );
 }

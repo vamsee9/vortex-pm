@@ -16,9 +16,11 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, Plus, FolderKanban, ArrowRight, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
-import { fetchProjects, createProject } from "@/lib/actions/projects";
-import { checkIsOrgAdmin, submitRemovalRequest } from "@/lib/actions/lifecycle";
+import { fetchProjects, createProject, deleteProject } from "@/lib/actions/projects";
+import { checkIsOrgAdmin } from "@/lib/actions/lifecycle";
+import { deleteOrganizationCascading } from "@/lib/actions/organizations";
 import { createClient } from "@/lib/supabase/client";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import type { Project } from "@/lib/types";
 
 export default function ProjectsPage({ params }: { params: Promise<{ orgId: string }> }) {
@@ -27,7 +29,8 @@ export default function ProjectsPage({ params }: { params: Promise<{ orgId: stri
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [isOrgAdmin, setIsOrgAdmin] = useState(false);
-  const [requestingRemoval, setRequestingRemoval] = useState(false);
+  const [isDeletingOrg, setIsDeletingOrg] = useState(false);
+  const [isDeletingProject, setIsDeletingProject] = useState<string | null>(null);
 
   // Form State
   const [newName, setNewName] = useState("");
@@ -84,21 +87,35 @@ export default function ProjectsPage({ params }: { params: Promise<{ orgId: stri
     router.push("/board");
   }
 
-  async function handleRemovalRequest() {
-    if (!confirm("Are you sure you want to request deletion of this organization? This cannot be easily undone.")) return;
-    
-    setRequestingRemoval(true);
+  async function handleDeleteProject(e: React.MouseEvent, projectId: string) {
+    e.stopPropagation();
+    setIsDeletingProject(projectId);
     try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
-      
-      await submitRemovalRequest(orgId, user.id);
-      toast.success("Removal request submitted successfully.");
+      await deleteProject(projectId, orgId);
+      setProjects(projects.filter(p => p.id !== projectId));
+      toast.success("Project deleted successfully.");
     } catch (err: any) {
-      toast.error(err.message || "Failed to submit request.");
+      toast.error(err.message || "Failed to delete project.");
     } finally {
-      setRequestingRemoval(false);
+      setIsDeletingProject(null);
+    }
+  }
+
+  async function handleDeleteOrg() {
+    setIsDeletingOrg(true);
+    try {
+      await deleteOrganizationCascading(orgId);
+      
+      // If we made it here, the org is deleted. If the user was also deleted,
+      // their session is invalid. Let's just sign out locally and redirect.
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      
+      toast.success("Organization and account deleted successfully.");
+      router.push("/login");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete organization.");
+      setIsDeletingOrg(false);
     }
   }
 
@@ -212,7 +229,41 @@ export default function ProjectsPage({ params }: { params: Promise<{ orgId: stri
                       <span className="font-mono bg-neutral-950 px-2 rounded border border-neutral-800 text-neutral-300">{project.jira_project_key}</span>
                     </div>
                   </div>
-                  <ArrowRight className="w-5 h-5 text-neutral-600" />
+                  <div className="flex items-center gap-3">
+                    {isOrgAdmin && (
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="text-red-400 hover:text-red-300 hover:bg-red-950/50"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {isDeletingProject === project.id ? <Loader2 className="w-4 h-4 animate-spin" /> : "Delete"}
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent onClick={(e) => e.stopPropagation()}>
+                          <DialogHeader>
+                            <DialogTitle>Delete Project?</DialogTitle>
+                            <DialogDescription>
+                              This action cannot be undone. This will permanently delete the project
+                              <strong> {project.name} </strong> and all its associated data.
+                            </DialogDescription>
+                          </DialogHeader>
+                          <DialogFooter>
+                            <Button variant="outline">Cancel</Button>
+                            <Button 
+                              variant="destructive" 
+                              onClick={(e) => handleDeleteProject(e, project.id)}
+                            >
+                              Confirm Deletion
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    )}
+                    <ArrowRight className="w-5 h-5 text-neutral-600" />
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -226,19 +277,46 @@ export default function ProjectsPage({ params }: { params: Promise<{ orgId: stri
             <CardHeader>
               <CardTitle className="text-lg text-red-400">Danger Zone</CardTitle>
               <CardDescription className="text-neutral-400">
-                Submit a request to permanently delete this organization and all its data.
+                Permanently delete this organization and all its data.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Button 
-                variant="destructive" 
-                onClick={handleRemovalRequest}
-                disabled={requestingRemoval}
-                className="bg-red-900/50 hover:bg-red-900 text-red-200 border border-red-900/50"
-              >
-                {requestingRemoval ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                Submit Removal Request
-              </Button>
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button 
+                    variant="destructive" 
+                    disabled={projects.length > 0 || isDeletingOrg}
+                    className="bg-red-900/50 hover:bg-red-900 text-red-200 border border-red-900/50"
+                  >
+                    {isDeletingOrg ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                    Delete Organization
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Are you absolutely sure?</DialogTitle>
+                    <DialogDescription>
+                      This action cannot be undone. This will permanently delete the organization, all associated data, 
+                      and <strong>your own user account</strong>. You will be logged out immediately.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <DialogFooter>
+                    <Button variant="outline">Cancel</Button>
+                    <Button 
+                      variant="destructive" 
+                      onClick={handleDeleteOrg}
+                      disabled={isDeletingOrg}
+                    >
+                      {isDeletingOrg ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : "Yes, Delete Everything"}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+              {projects.length > 0 && (
+                <p className="text-sm text-red-400/80 mt-3">
+                  You must delete all projects before you can delete the organization.
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>

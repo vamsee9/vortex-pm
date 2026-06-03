@@ -24,8 +24,9 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, Plus, Trash2, Key, Link as LinkIcon, Info, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 import { fetchMetadata, createMetadataItem, deleteMetadataItem } from "@/lib/actions/metadata";
-import type { MetadataItem } from "@/lib/types";
+import type { MetadataItem, Project } from "@/lib/types";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ColumnBuilder } from "@/components/column-builder";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -38,6 +39,7 @@ export default function SettingsPage() {
   const [newLabel, setNewLabel] = useState("");
   const [newCategory, setNewCategory] = useState<"work_type" | "priority" | "status">("work_type");
   const [isAdding, setIsAdding] = useState(false);
+  const [activeProject, setActiveProject] = useState<Project | null>(null);
 
   // Initial check & load
   const loadInitialData = useCallback(async () => {
@@ -56,6 +58,16 @@ export default function SettingsPage() {
     try {
       const data = await fetchMetadata();
       setMetadata(data);
+
+      // Fetch active project to get field mappings
+      const { data: projectData } = await supabase
+        .from("projects")
+        .select("*")
+        .limit(1)
+        .single();
+      if (projectData) {
+        setActiveProject(projectData as Project);
+      }
     } catch (err) {
       toast.error("Failed to load metadata configurations.");
     } finally {
@@ -137,6 +149,9 @@ export default function SettingsPage() {
         <TabsList className="bg-neutral-900 border border-neutral-800 h-11 w-full justify-start rounded-lg mb-6">
           <TabsTrigger value="metadata" className="data-[state=active]:bg-neutral-800 data-[state=active]:text-neutral-100 text-neutral-400">
             Metadata Lists
+          </TabsTrigger>
+          <TabsTrigger value="schema" className="data-[state=active]:bg-neutral-800 data-[state=active]:text-neutral-100 text-neutral-400">
+            Table Schema
           </TabsTrigger>
           <TabsTrigger value="integrations" className="data-[state=active]:bg-neutral-800 data-[state=active]:text-neutral-100 text-neutral-400">
             Integrations
@@ -252,6 +267,28 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        {/* ─── Tab 1.5: Schema ─── */}
+        <TabsContent value="schema" className="space-y-6 outline-none">
+          <Card className="bg-neutral-900/80 border-neutral-800">
+            <CardHeader>
+              <CardTitle className="text-lg text-neutral-100">Dynamic Table Schema</CardTitle>
+              <CardDescription className="text-neutral-400">
+                Define the columns for your project board and map them to Jira webhook payloads.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {activeProject ? (
+                <ColumnBuilder 
+                  projectId={activeProject.id} 
+                  initialFieldMappings={activeProject.field_mappings || {}} 
+                />
+              ) : (
+                <p className="text-neutral-500">No active project found.</p>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* ─── Tab 2: Integrations ─── */}

@@ -82,3 +82,21 @@ export async function deleteProject(id: string, orgId: string) {
 
   revalidatePath(`/orgs/${orgId}`);
 }
+
+export async function updateProjectFieldMappings(
+  projectId: string,
+  fieldMappings: Record<string, string>
+) {
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .from("projects")
+    .update({ field_mappings: fieldMappings })
+    .eq("id", projectId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  revalidatePath("/settings");
+}

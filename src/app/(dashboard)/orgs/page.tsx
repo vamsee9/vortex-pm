@@ -17,10 +17,11 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, Plus, Building2, ArrowRight, ShieldAlert, Check, X } from "lucide-react";
 import { toast } from "sonner";
-import { fetchOrganizations, createOrganization } from "@/lib/actions/organizations";
-import { checkIsGlobalAdmin, getRemovalRequests, updateRemovalRequest } from "@/lib/actions/lifecycle";
+import { fetchOrganizations, createOrganizationWithAdmin } from "@/lib/actions/organizations";
+import { checkIsGlobalAdmin } from "@/lib/actions/lifecycle";
 import { isDemoModeActive, enableDemoMode, disableDemoMode } from "@/lib/demo-mode";
 import type { Organization } from "@/lib/types";
+import { Copy } from "lucide-react";
 
 export default function OrganizationsPage() {
   const router = useRouter();
@@ -29,13 +30,19 @@ export default function OrganizationsPage() {
   
   const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
   const [demoActive, setDemoActive] = useState(false);
-  const [removalRequests, setRemovalRequests] = useState<any[]>([]);
 
   // Form State
   const [newOrgName, setNewOrgName] = useState("");
   const [newOrgSlug, setNewOrgSlug] = useState("");
+  const [newAdminUsername, setNewAdminUsername] = useState("");
+  const [newAdminName, setNewAdminName] = useState("");
+  const [newAdminEmail, setNewAdminEmail] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  
+  // Temp credentials from creation
+  const [tempCredentials, setTempCredentials] = useState<{ email: string; password: string } | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const loadOrgs = useCallback(async () => {
     try {
@@ -44,10 +51,6 @@ export default function OrganizationsPage() {
 
       const adminCheck = await checkIsGlobalAdmin();
       setIsGlobalAdmin(adminCheck);
-      if (adminCheck) {
-        const requests = await getRemovalRequests();
-        setRemovalRequests(requests);
-      }
 
       if (!demoCheck) {
         const data = await fetchOrganizations();
@@ -66,21 +69,39 @@ export default function OrganizationsPage() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!newOrgName.trim() || !newOrgSlug.trim()) return;
+    if (!newOrgName.trim() || !newOrgSlug.trim() || !newAdminUsername.trim() || !newAdminName.trim()) return;
 
     setIsCreating(true);
+    setTempCredentials(null);
     try {
-      const newOrg = await createOrganization(newOrgName.trim(), newOrgSlug.trim());
-      setOrgs([newOrg, ...orgs]);
+      const { organization, adminCredentials } = await createOrganizationWithAdmin(
+        newOrgName.trim(), 
+        newOrgSlug.trim(),
+        newAdminUsername.trim(),
+        newAdminName.trim(),
+        newAdminEmail.trim()
+      );
+      setOrgs([organization, ...orgs]);
       setNewOrgName("");
       setNewOrgSlug("");
-      setShowForm(false);
-      toast.success("Organization created successfully.");
+      setNewAdminUsername("");
+      setNewAdminName("");
+      setNewAdminEmail("");
+      
+      setTempCredentials(adminCredentials);
+      toast.success("Organization and Admin created successfully.");
     } catch (err: any) {
       toast.error(err.message || "Failed to create organization.");
     } finally {
       setIsCreating(false);
     }
+  }
+
+  function copyToClipboard(text: string) {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    toast.success("Copied to clipboard!");
   }
 
   // Auto-generate slug from name
@@ -89,18 +110,7 @@ export default function OrganizationsPage() {
     setNewOrgSlug(name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)+/g, ""));
   }
 
-  async function handleRequestAction(requestId: string, status: "approved" | "rejected") {
-    try {
-      await updateRemovalRequest(requestId, status);
-      setRemovalRequests(prev => prev.filter(r => r.id !== requestId));
-      toast.success(`Request ${status} successfully.`);
-      if (status === "approved") {
-        loadOrgs(); // Reload to see paused statuses
-      }
-    } catch (err: any) {
-      toast.error(err.message || "Failed to update request.");
-    }
-  }
+
 
   async function handleDemoMode(role: "admin" | "member" | "off") {
     setLoading(true);
@@ -142,39 +152,132 @@ export default function OrganizationsPage() {
         <Card className="bg-neutral-900/80 border-neutral-800">
           <CardHeader>
             <CardTitle className="text-lg text-neutral-100">Create New Organization</CardTitle>
+            <CardDescription className="text-neutral-400">
+              Set up a new organization and assign its first administrative user.
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleCreate} className="space-y-4 max-w-md">
-              <div className="space-y-2">
-                <Label className="text-neutral-300">Organization Name</Label>
-                <Input 
-                  placeholder="e.g., Acme Corp"
-                  value={newOrgName}
-                  onChange={e => handleNameChange(e.target.value)}
-                  required
-                  className="bg-neutral-800 border-neutral-700 text-neutral-100"
-                />
+            {tempCredentials ? (
+              <div className="p-6 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+                <h3 className="text-lg font-medium text-emerald-400 mb-2">✅ Organization Created</h3>
+                <p className="text-sm text-neutral-300 mb-4">
+                  The organization and admin account have been set up. Share these credentials securely with the new Org Admin:
+                </p>
+                <div className="space-y-3 bg-neutral-950 p-4 rounded-md border border-neutral-800">
+                  <div className="flex justify-between items-center">
+                    <span className="text-neutral-400 text-sm">Login Email:</span>
+                    <code className="text-neutral-200">{tempCredentials.email}</code>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-neutral-400 text-sm">Temporary Password:</span>
+                    <div className="flex items-center gap-2">
+                      <code className="text-neutral-200 bg-neutral-800 px-2 py-1 rounded">
+                        {tempCredentials.password}
+                      </code>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => copyToClipboard(tempCredentials.password)}
+                        className="text-neutral-400 hover:text-neutral-200"
+                      >
+                        {copied ? (
+                          <Check className="w-4 h-4 text-emerald-400" />
+                        ) : (
+                          <Copy className="w-4 h-4" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+                <p className="text-xs text-amber-400 mt-4">
+                  ⚠️ This password will not be shown again. Copy it now.
+                </p>
+                <Button 
+                  onClick={() => {
+                    setTempCredentials(null);
+                    setShowForm(false);
+                  }} 
+                  className="mt-6 w-full bg-neutral-800 hover:bg-neutral-700"
+                >
+                  Close
+                </Button>
               </div>
-              <div className="space-y-2">
-                <Label className="text-neutral-300">URL Slug</Label>
-                <Input 
-                  placeholder="acme-corp"
-                  value={newOrgSlug}
-                  onChange={e => setNewOrgSlug(e.target.value)}
-                  required
-                  className="bg-neutral-800 border-neutral-700 text-neutral-100 font-mono text-sm"
-                />
-                <p className="text-xs text-neutral-500">Must be unique. Only lowercase letters, numbers, and hyphens.</p>
-              </div>
-              <Button 
-                type="submit" 
-                disabled={isCreating || !newOrgName.trim()}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white w-full"
-              >
-                {isCreating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                Create Organization
-              </Button>
-            </form>
+            ) : (
+              <form onSubmit={handleCreate} className="space-y-6">
+                
+                <div className="space-y-4">
+                  <h3 className="text-sm font-medium text-emerald-500 uppercase tracking-wider">1. Organization Details</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-neutral-300">Organization Name <span className="text-red-400">*</span></Label>
+                      <Input 
+                        placeholder="e.g., Acme Corp"
+                        value={newOrgName}
+                        onChange={e => handleNameChange(e.target.value)}
+                        required
+                        className="bg-neutral-800 border-neutral-700 text-neutral-100"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-neutral-300">URL Slug <span className="text-red-400">*</span></Label>
+                      <Input 
+                        placeholder="acme-corp"
+                        value={newOrgSlug}
+                        onChange={e => setNewOrgSlug(e.target.value)}
+                        required
+                        className="bg-neutral-800 border-neutral-700 text-neutral-100 font-mono text-sm"
+                      />
+                      <p className="text-xs text-neutral-500">Must be unique. Lowercase letters/numbers/hyphens.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4 pt-4 border-t border-neutral-800">
+                  <h3 className="text-sm font-medium text-emerald-500 uppercase tracking-wider">2. Organization Admin</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-neutral-300">Admin Username <span className="text-red-400">*</span></Label>
+                      <Input 
+                        placeholder="e.g., alice"
+                        value={newAdminUsername}
+                        onChange={e => setNewAdminUsername(e.target.value)}
+                        required
+                        className="bg-neutral-800 border-neutral-700 text-neutral-100"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-neutral-300">Admin Display Name <span className="text-red-400">*</span></Label>
+                      <Input 
+                        placeholder="e.g., Alice Smith"
+                        value={newAdminName}
+                        onChange={e => setNewAdminName(e.target.value)}
+                        required
+                        className="bg-neutral-800 border-neutral-700 text-neutral-100"
+                      />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label className="text-neutral-300">Admin Email (Optional)</Label>
+                      <Input 
+                        type="email"
+                        placeholder={`e.g., alice@company.com (Defaults to ${newAdminUsername || 'username'}@${newOrgSlug || 'org'}.vortex)`}
+                        value={newAdminEmail}
+                        onChange={e => setNewAdminEmail(e.target.value)}
+                        className="bg-neutral-800 border-neutral-700 text-neutral-100"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <Button 
+                  type="submit" 
+                  disabled={isCreating || !newOrgName.trim() || !newAdminUsername.trim() || !newAdminName.trim()}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white w-full"
+                >
+                  {isCreating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                  Create Organization & Admin
+                </Button>
+              </form>
+            )}
           </CardContent>
         </Card>
       )}
@@ -263,49 +366,6 @@ export default function OrganizationsPage() {
         </div>
       )}
 
-      {/* Global Admin: Pending Removal Requests */}
-      {isGlobalAdmin && removalRequests.length > 0 && (
-        <div className="mt-12 pt-8 border-t border-neutral-800">
-          <h3 className="text-lg font-semibold text-neutral-100 mb-4 flex items-center gap-2">
-            <ShieldAlert className="w-5 h-5 text-amber-500" />
-            Pending Removal Requests
-          </h3>
-          <div className="space-y-4">
-            {removalRequests.map(req => (
-              <Card key={req.id} className="bg-neutral-900/50 border-amber-500/20">
-                <CardContent className="p-4 flex items-center justify-between">
-                  <div>
-                    <p className="text-neutral-200 font-medium">
-                      Organization: <span className="text-emerald-400">{req.organizations?.name}</span>
-                    </p>
-                    <p className="text-sm text-neutral-500">
-                      Requested by {req.requested_by?.email || req.requested_by?.raw_user_meta_data?.username} on {new Date(req.created_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => handleRequestAction(req.id, "rejected")}
-                      className="border-neutral-700 hover:bg-neutral-800 text-neutral-300"
-                    >
-                      <X className="w-4 h-4 mr-1" /> Reject
-                    </Button>
-                    <Button 
-                      variant="destructive" 
-                      size="sm"
-                      onClick={() => handleRequestAction(req.id, "approved")}
-                      className="bg-red-900/50 hover:bg-red-900 text-red-200 border-red-900/50"
-                    >
-                      <Check className="w-4 h-4 mr-1" /> Approve & Pause
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

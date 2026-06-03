@@ -17,13 +17,44 @@ function getDemoData() {
       projects: [{ id: MOCK_PROJECT_ID, org_id: MOCK_ORG_ID, name: "Mobile App (Demo)", jira_project_key: "MOB", status: "active" }],
       sprints: [{ sprint_id: "sprint-1", project_id: MOCK_PROJECT_ID, sprint_name: "Sprint 1", state: "active" }],
       tasks: [
-        { id: "task-1", project_id: MOCK_PROJECT_ID, jira_issue_key: "MOB-1", summary: "Design Login Screen", status: "Done", priority: "High", work_type: "Story", story_points: 5, assignees: ["Alice"], sprint_id: "sprint-1" },
-        { id: "task-2", project_id: MOCK_PROJECT_ID, jira_issue_key: "MOB-2", summary: "Setup API Gateway", status: "In Progress", priority: "Highest", work_type: "Task", story_points: 8, assignees: ["Bob"], sprint_id: "sprint-1" }
+        { 
+          id: "task-1", 
+          project_id: MOCK_PROJECT_ID, 
+          jira_key: "MOB-1", 
+          sprint_id: "sprint-1", 
+          custom_fields: {
+            summary: "Design Login Screen", 
+            status: "Done", 
+            priority: "High", 
+            work_type: "Story", 
+            story_points: 5, 
+            assignees: ["Alice"]
+          } 
+        },
+        { 
+          id: "task-2", 
+          project_id: MOCK_PROJECT_ID, 
+          jira_key: "MOB-2", 
+          sprint_id: "sprint-1",
+          custom_fields: {
+            summary: "Setup API Gateway", 
+            status: "In Progress", 
+            priority: "Highest", 
+            work_type: "Task", 
+            story_points: 8, 
+            assignees: ["Bob"]
+          }
+        }
       ],
       metadata: [
         { id: "m1", project_id: MOCK_PROJECT_ID, category: "status", label: "To Do", display_order: 1 },
         { id: "m2", project_id: MOCK_PROJECT_ID, category: "status", label: "In Progress", display_order: 2 },
         { id: "m3", project_id: MOCK_PROJECT_ID, category: "status", label: "Done", display_order: 3 }
+      ],
+      columns: [
+        { id: "c1", project_id: MOCK_PROJECT_ID, key: "summary", label: "Summary", data_type: "text", is_editable: true, is_visible: true, display_order: 1, width_px: 250 },
+        { id: "c2", project_id: MOCK_PROJECT_ID, key: "status", label: "Status", data_type: "select", is_editable: true, is_visible: true, display_order: 2, width_px: 120, options: [{ value: "To Do", label: "To Do", color: "#6b7280" }, { value: "In Progress", label: "In Progress", color: "#3b82f6" }, { value: "Done", label: "Done", color: "#10b981" }] },
+        { id: "c3", project_id: MOCK_PROJECT_ID, key: "priority", label: "Priority", data_type: "select", is_editable: true, is_visible: true, display_order: 3, width_px: 100, options: [{ value: "High", label: "High", color: "#ef4444" }] }
       ]
     };
   }
@@ -105,4 +136,8 @@ export function getMockMetadata(projectId: string, category?: string) {
   let meta = getDemoData().metadata.filter((m: any) => m.project_id === projectId);
   if (category) meta = meta.filter((m: any) => m.category === category);
   return meta;
+}
+
+export function getMockColumnDefinitions(projectId: string) {
+  return getDemoData().columns.filter((c: any) => c.project_id === projectId);
 }
