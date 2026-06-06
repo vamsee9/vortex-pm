@@ -16,7 +16,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Copy, MessageSquare, Trash2 } from "lucide-react";
+import { MoreHorizontal, Copy, Trash2 } from "lucide-react";
 import { duplicateTask, deleteTask } from "@/lib/actions/tasks";
 import { toast } from "sonner";
 import type { ProjectTask } from "@/lib/types";
@@ -24,20 +24,19 @@ import type { ProjectTask } from "@/lib/types";
 interface RowActionsProps {
   task: ProjectTask;
   isOwner: boolean;
-  onOpenComments: (taskId: string) => void;
 }
 
-export function RowActions({ task, isOwner, onOpenComments }: RowActionsProps) {
+export function RowActions({ task, isOwner }: RowActionsProps) {
   const [loading, setLoading] = useState(false);
 
-  async function handleDuplicate() {
+  async function handleCopyToMyBoard() {
     setLoading(true);
     try {
       const result = await duplicateTask(task.id);
       if (result.success) {
-        toast.success("Task duplicated to your sheet!");
+        toast.success("Task copied to your board!");
       } else {
-        toast.error(result.error || "Failed to duplicate task.");
+        toast.error(result.error || "Failed to copy task.");
       }
     } catch {
       toast.error("Something went wrong.");
@@ -76,18 +75,12 @@ export function RowActions({ task, isOwner, onOpenComments }: RowActionsProps) {
           <span className="sr-only">Open menu</span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-[160px]">
-        {/* Comment — available to everyone */}
-        <DropdownMenuItem onClick={() => onOpenComments(task.id)}>
-          <MessageSquare className="mr-2 h-3.5 w-3.5" />
-          Add Comment
-        </DropdownMenuItem>
-
-        {/* Duplicate — available on rows you DON'T own */}
+      <DropdownMenuContent align="end" className="w-[180px]">
+        {/* Copy To My Board — available on rows you DON'T own */}
         {!isOwner && (
-          <DropdownMenuItem onClick={handleDuplicate}>
+          <DropdownMenuItem onClick={handleCopyToMyBoard}>
             <Copy className="mr-2 h-3.5 w-3.5" />
-            Duplicate to My Sheet
+            Copy To My Board
           </DropdownMenuItem>
         )}
 

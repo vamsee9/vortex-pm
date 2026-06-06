@@ -13,11 +13,11 @@ import {
 import { buildColumnsFromDefinitions, SortableHeader } from "./columns";
 import { DataTableToolbar } from "./toolbar";
 import { RowActions } from "./row-actions";
-import { CommentsDialog } from "@/components/comments-dialog";
+import { TaskDrawer } from "./task-drawer";
 import { DataTablePagination } from "./pagination";
 import { useColumnPreferences } from "./use-column-preferences";
 import type { ProjectTask, ColumnDefinition } from "@/lib/types";
-import { Loader2, Trash2, X, Inbox } from "lucide-react";
+import { Loader2, Trash2, X, Inbox, Copy } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,7 +25,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { updateTaskCustomField, deleteTask } from "@/lib/actions/tasks";
+import { updateTaskCustomField, deleteTask, duplicateTask } from "@/lib/actions/tasks";
 import { toast } from "sonner";
 
 interface DataTableProps {
@@ -35,9 +35,10 @@ interface DataTableProps {
   sprintName?: string;
   columnDefs: ColumnDefinition[];
   projectId?: string;
+  readOnly?: boolean;
 }
 
-export function DataTable({ tasks, totalCount, currentUserId, sprintName, columnDefs, projectId }: DataTableProps) {
+export function DataTable({ tasks, totalCount, currentUserId, sprintName, columnDefs, projectId, readOnly = false }: DataTableProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -45,10 +46,9 @@ export function DataTable({ tasks, totalCount, currentUserId, sprintName, column
   const sortKey = searchParams.get("sort") || "updated_at";
   const sortDirection = (searchParams.get("dir") as "asc" | "desc") || "desc";
 
-  // Comments dialog state
-  const [commentsOpen, setCommentsOpen] = useState(false);
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [selectedTaskKey, setSelectedTaskKey] = useState<string>("");
+  // Task drawer state
+  const [drawerTask, setDrawerTask] = useState<ProjectTask | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   // Row Selection state
@@ -163,12 +163,27 @@ export function DataTable({ tasks, totalCount, currentUserId, sprintName, column
     });
   };
 
-  function openComments(taskId: string) {
+  function openDrawer(taskId: string) {
     const task = tasks.find((t) => t.id === taskId);
-    setSelectedTaskId(taskId);
-    setSelectedTaskKey(task?.jira_key || "");
-    setCommentsOpen(true);
+    if (task) {
+      setDrawerTask(task);
+      setDrawerOpen(true);
+    }
   }
+
+  // Copy To My Board action
+  const handleCopyToMyBoard = async () => {
+    if (readOnly) return;
+    startTransition(async () => {
+      let count = 0;
+      for (const id of Array.from(selectedRows)) {
+        const res = await duplicateTask(id);
+        if (res.success) count++;
+      }
+      toast.success(`Copied ${count} task(s) to your board`);
+      setSelectedRows(new Set());
+    });
+  };
 
   if (!isLoaded) {
     return (
@@ -206,12 +221,13 @@ export function DataTable({ tasks, totalCount, currentUserId, sprintName, column
           </div>
         </div>
 
-        <CommentsDialog
-          taskId={selectedTaskId}
-          taskKey={selectedTaskKey}
-          currentUserId={currentUserId}
-          open={commentsOpen}
-          onOpenChange={setCommentsOpen}
+        <TaskDrawer
+          task={drawerTask}
+          columnDefs={columnDefs}
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          onSave={handleEditCell}
+          readOnly={readOnly}
         />
       </div>
     );
@@ -306,10 +322,14 @@ export function DataTable({ tasks, totalCount, currentUserId, sprintName, column
                   <TableRow
                     key={task.id}
                     data-state={isSelected ? "selected" : undefined}
-                    className="border-b transition-colors data-[state=selected]:bg-muted/50 hover:bg-muted/40"
+                    className="border-b transition-colors data-[state=selected]:bg-muted/50 hover:bg-muted/40 cursor-pointer"
+                    onClick={() => openDrawer(task.id)}
                   >
                     {/* Row checkbox */}
-                    <TableCell className="w-[40px] whitespace-nowrap p-2 align-middle [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]">
+                    <TableCell
+                      className="w-[40px] whitespace-nowrap p-2 align-middle [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <Checkbox
                         checked={isSelected}
                         onCheckedChange={(c) => handleSelectRow(task.id, !!c)}
@@ -326,20 +346,22 @@ export function DataTable({ tasks, totalCount, currentUserId, sprintName, column
                           style={{ width: `${width}px`, minWidth: `${Math.min(width, 80)}px` }}
                           className="whitespace-nowrap p-2 align-middle"
                         >
-                          {col.render(task, isOwner, handleEditCell)}
+                          {col.render(task, isOwner && !readOnly, handleEditCell)}
                         </TableCell>
                       );
                     })}
 
                     {/* Row actions */}
-                    <TableCell className="w-[50px] whitespace-nowrap p-2 align-middle">
+                    <TableCell
+                      className="w-[50px] whitespace-nowrap p-2 align-middle"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       {isPending ? (
                         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mx-auto" />
                       ) : (
                         <RowActions
                           task={task}
-                          isOwner={isOwner}
-                          onOpenComments={openComments}
+                          isOwner={isOwner && !readOnly}
                         />
                       )}
                     </TableCell>
@@ -367,20 +389,40 @@ export function DataTable({ tasks, totalCount, currentUserId, sprintName, column
 
             <div className="h-4 w-px bg-border" />
 
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={handleBulkDelete}
-              disabled={isPending}
-              className="gap-1.5"
-            >
-              {isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Trash2 className="h-3.5 w-3.5" />
-              )}
-              Delete
-            </Button>
+            {/* Copy To My Board — shown when viewing other members' tasks */}
+            {readOnly && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCopyToMyBoard}
+                disabled={isPending}
+                className="gap-1.5"
+              >
+                {isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Copy className="h-3.5 w-3.5" />
+                )}
+                Copy To My Board
+              </Button>
+            )}
+
+            {!readOnly && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleBulkDelete}
+                disabled={isPending}
+                className="gap-1.5"
+              >
+                {isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="h-3.5 w-3.5" />
+                )}
+                Delete
+              </Button>
+            )}
 
             <Button
               variant="ghost"
@@ -395,12 +437,14 @@ export function DataTable({ tasks, totalCount, currentUserId, sprintName, column
         </div>
       )}
 
-      <CommentsDialog
-        taskId={selectedTaskId}
-        taskKey={selectedTaskKey}
-        currentUserId={currentUserId}
-        open={commentsOpen}
-        onOpenChange={setCommentsOpen}
+      {/* Task Drawer */}
+      <TaskDrawer
+        task={drawerTask}
+        columnDefs={columnDefs}
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        onSave={handleEditCell}
+        readOnly={readOnly}
       />
     </div>
   );

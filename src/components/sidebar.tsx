@@ -1,18 +1,11 @@
 /**
  * components/sidebar.tsx
  * ----------------------
- * Dashboard sidebar navigation — Supabase-inspired dark design.
- * Shows navigation links, the current user info, and a logout button.
+ * Dashboard sidebar — role-based navigation.
  *
- * Navigation items:
- * - Sprint Board (main data table)
- * - QBR Presentation (charts)
- * - Organizations (multi-tenant, all users)
- * - Team Management (admin/moderator only)
- * - Configurations (admin/moderator only)
- *
- * The collapse toggle sits next to the "Vortex" title
- * for a compact, intuitive header layout.
+ * Owner:  Dashboard → Organizations, Platform Settings
+ * Admin:  Dashboard → Projects, Team Members, Configurations, Reporting
+ * Member: Sprint Board, Reporting
  */
 
 "use client";
@@ -31,14 +24,15 @@ import {
 import {
   BarChart3,
   LayoutDashboard,
-  Presentation,
-  Shield,
-  Settings,
   Building2,
+  FolderKanban,
+  Users,
+  Settings,
+  PieChart,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
-  PieChart,
+  Wrench,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -49,49 +43,88 @@ interface SidebarProps {
   activeProjectId?: string;
 }
 
-// Navigation items — easy to add new pages here.
-// `allowedRoles` controls visibility: undefined = all users, array = only those roles.
-const navItems = [
-  {
-    label: "Sprint Board",
-    href: "/board",
-    icon: LayoutDashboard,
-    allowedRoles: undefined, // visible to everyone
-    tooltip: "View and manage sprint tasks",
-    requireProject: true,
-  },
-  {
-    label: "Reporting",
-    href: "/reporting",
-    icon: PieChart,
-    allowedRoles: undefined,
-    tooltip: "Charts and sprint analytics",
-    requireProject: true,
-  },
-  {
-    label: "Organizations",
-    href: "/orgs",
-    icon: Building2,
-    allowedRoles: undefined,
-    tooltip: "Manage orgs and projects",
-  },
-  {
-    label: "Team Management",
-    href: "/admin",
-    icon: Shield,
-    allowedRoles: ["owner"],
-    tooltip: "Add or manage platform team members",
-    requireProject: false,
-  },
-  {
-    label: "Configurations",
-    href: "/settings",
-    icon: Settings,
-    allowedRoles: ["admin", "moderator", "owner"],
-    tooltip: "Metadata, integrations, and app settings",
-    requireProject: true,
-  },
-];
+interface NavItem {
+  label: string;
+  href: string;
+  icon: any;
+  tooltip: string;
+}
+
+function getNavItemsForRole(role: string, activeProjectId?: string): NavItem[] {
+  if (role === "owner") {
+    return [
+      {
+        label: "Dashboard",
+        href: "/dashboard",
+        icon: LayoutDashboard,
+        tooltip: "Organization overview",
+      },
+      {
+        label: "Organizations",
+        href: "/orgs",
+        icon: Building2,
+        tooltip: "Manage organizations",
+      },
+    ];
+  }
+
+  if (role === "admin") {
+    const items: NavItem[] = [
+      {
+        label: "Dashboard",
+        href: "/dashboard",
+        icon: LayoutDashboard,
+        tooltip: "Project overview",
+      },
+    ];
+
+    if (activeProjectId) {
+      items.push(
+        {
+          label: "Team Members",
+          href: `/projects/${activeProjectId}`,
+          icon: Users,
+          tooltip: "Manage team members",
+        },
+        {
+          label: "Configurations",
+          href: "/settings",
+          icon: Settings,
+          tooltip: "Metadata and table schema",
+        },
+        {
+          label: "Reporting",
+          href: "/reporting",
+          icon: PieChart,
+          tooltip: "Charts and analytics",
+        },
+      );
+    }
+
+    return items;
+  }
+
+  // Member
+  const items: NavItem[] = [];
+  if (activeProjectId) {
+    items.push(
+      {
+        label: "Sprint Board",
+        href: "/board",
+        icon: LayoutDashboard,
+        tooltip: "View and manage sprint tasks",
+      },
+      {
+        label: "Reporting",
+        href: "/reporting",
+        icon: PieChart,
+        tooltip: "Charts and analytics",
+      },
+    );
+  }
+
+  return items;
+}
 
 export function Sidebar({ userEmail, userName, userRole, activeProjectId }: SidebarProps) {
   const pathname = usePathname();
@@ -101,18 +134,28 @@ export function Sidebar({ userEmail, userName, userRole, activeProjectId }: Side
   async function handleLogout() {
     const supabase = createClient();
     await supabase.auth.signOut();
+    // Clear project cookie
+    document.cookie = "active_project_id=; path=/; max-age=0";
     router.push("/login");
     router.refresh();
   }
 
-  // Filter nav items based on the user's role and active project
-  const visibleItems = navItems.filter(
-    (item) => {
-      if (item.requireProject && !activeProjectId) return false;
-      if (item.allowedRoles && !item.allowedRoles.includes(userRole)) return false;
-      return true;
-    }
-  );
+  const navItems = getNavItemsForRole(userRole, activeProjectId);
+
+  // Role display label
+  const roleLabel =
+    userRole === "owner"
+      ? "Platform Owner"
+      : userRole === "admin"
+      ? "Org Admin"
+      : "Team Member";
+
+  const roleColor =
+    userRole === "owner"
+      ? "text-amber-400"
+      : userRole === "admin"
+      ? "text-emerald-400"
+      : "text-blue-400";
 
   return (
     <aside
@@ -139,7 +182,6 @@ export function Sidebar({ userEmail, userName, userRole, activeProjectId }: Side
           )}
         </div>
 
-        {/* Collapse toggle — sits on the outer border */}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -161,9 +203,18 @@ export function Sidebar({ userEmail, userName, userRole, activeProjectId }: Side
         </Tooltip>
       </div>
 
+      {/* ── Role indicator ── */}
+      {!collapsed && (
+        <div className="px-4 py-2.5 border-b border-neutral-800/50">
+          <span className={cn("text-[10px] font-semibold uppercase tracking-widest", roleColor)}>
+            {roleLabel}
+          </span>
+        </div>
+      )}
+
       {/* ── Navigation Links ── */}
       <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto">
-        {visibleItems.map((item) => {
+        {navItems.map((item) => {
           const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
           const Icon = item.icon;
 
@@ -183,7 +234,6 @@ export function Sidebar({ userEmail, userName, userRole, activeProjectId }: Side
             </Link>
           );
 
-          // When collapsed, wrap each item in a tooltip showing the label
           if (collapsed) {
             return (
               <Tooltip key={item.href}>
@@ -204,7 +254,6 @@ export function Sidebar({ userEmail, userName, userRole, activeProjectId }: Side
       {/* ── User Info & Logout ── */}
       <div className="p-3">
         <div className="flex items-center gap-3">
-          {/* User avatar — first letter of name */}
           <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-xs font-bold shrink-0">
             {userName?.charAt(0)?.toUpperCase() || "U"}
           </div>
@@ -238,3 +287,4 @@ export function Sidebar({ userEmail, userName, userRole, activeProjectId }: Side
     </aside>
   );
 }
+

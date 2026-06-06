@@ -2,12 +2,7 @@
  * components/header.tsx
  * ---------------------
  * Top header bar for the dashboard.
- * Shows the sprint selector dropdown and page title.
- * The sprint selector lets users switch between sprints,
- * defaulting to the most recent active sprint.
- *
- * Includes tooltips on the calendar icon and sprint selector
- * for better accessibility and discoverability.
+ * Shows the page title and optional sprint selector.
  */
 
 "use client";
@@ -25,33 +20,23 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import type { SprintOption } from "@/lib/types";
-import { Calendar, LogOut, Settings as SettingsIcon } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { Calendar } from "lucide-react";
 
 interface HeaderProps {
   sprints: SprintOption[];
   currentSprintId: string | null;
   pageTitle: string;
-  hideSidebar?: boolean;
+  showSprintSelector?: boolean;
   userName?: string;
   userEmail?: string;
 }
 
-export function Header({ sprints, currentSprintId, pageTitle, hideSidebar, userName, userEmail }: HeaderProps) {
+export function Header({ sprints, currentSprintId, pageTitle, showSprintSelector }: HeaderProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   function handleSprintChange(sprintId: string) {
-    // Update the URL search params to reflect the selected sprint
     const params = new URLSearchParams(searchParams.toString());
 
     if (sprintId === "all") {
@@ -63,13 +48,6 @@ export function Header({ sprints, currentSprintId, pageTitle, hideSidebar, userN
     router.push(`?${params.toString()}`);
   }
 
-  async function handleLogout() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push("/login");
-    router.refresh();
-  }
-
   const hasSprints = sprints.length > 0;
 
   return (
@@ -77,8 +55,8 @@ export function Header({ sprints, currentSprintId, pageTitle, hideSidebar, userN
       {/* Page title */}
       <h1 className="text-lg font-semibold text-neutral-100">{pageTitle}</h1>
 
-      {/* Sprint selector (hidden if no project is active, disabled if no sprints) */}
-      {!hideSidebar && (
+      {/* Sprint selector — only shown when relevant */}
+      {showSprintSelector && (
         <div className="flex items-center gap-3">
           <Tooltip>
             <TooltipTrigger asChild>
@@ -125,37 +103,7 @@ export function Header({ sprints, currentSprintId, pageTitle, hideSidebar, userN
           </Tooltip>
         </div>
       )}
-
-      {/* Global Owner User Menu (Only shown when sidebar is hidden) */}
-      {hideSidebar && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="w-9 h-9 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-sm font-bold shrink-0 hover:bg-emerald-500/30 transition-colors outline-none focus:ring-2 focus:ring-emerald-500/50">
-              {userName?.charAt(0)?.toUpperCase() || "A"}
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56 bg-neutral-900 border-neutral-800 text-neutral-200">
-            <DropdownMenuLabel className="font-normal">
-              <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium leading-none text-neutral-100">{userName}</p>
-                <p className="text-xs leading-none text-neutral-500">{userEmail}</p>
-              </div>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator className="bg-neutral-800" />
-            <DropdownMenuItem className="focus:bg-neutral-800 focus:text-neutral-100 cursor-pointer text-neutral-300">
-              <SettingsIcon className="w-4 h-4 mr-2" />
-              Account Settings
-            </DropdownMenuItem>
-            <DropdownMenuItem 
-              onClick={handleLogout}
-              className="focus:bg-red-500/10 focus:text-red-400 text-red-400 cursor-pointer"
-            >
-              <LogOut className="w-4 h-4 mr-2" />
-              Sign Out
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
     </header>
   );
 }
+

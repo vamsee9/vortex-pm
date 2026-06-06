@@ -57,6 +57,74 @@ export async function fetchOrganizations(): Promise<Organization[]> {
   return data as Organization[];
 }
 
+/**
+ * Enhanced fetch for Owner dashboard — includes project count and admin info.
+ */
+export async function fetchOrganizationsWithStats(): Promise<Organization[]> {
+  if (await isDemoModeActive()) {
+    return getMockOrganizations();
+  }
+
+  const supabase = await createClient();
+  const adminClient = createAdminClient();
+
+  // Fetch all orgs
+  const { data: orgs, error } = await supabase
+    .from("organizations")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error || !orgs) {
+    console.error("Error fetching organizations:", error);
+    return [];
+  }
+
+  // Enrich with project counts and admin info
+  const enriched = await Promise.all(
+    orgs.map(async (org: any) => {
+      // Project count
+      const { count: projectCount } = await supabase
+        .from("projects")
+        .select("*", { count: "exact", head: true })
+        .eq("org_id", org.id);
+
+      // Find admin member
+      const { data: adminMember } = await supabase
+        .from("org_members")
+        .select("user_id")
+        .eq("org_id", org.id)
+        .eq("role", "admin")
+        .limit(1)
+        .single();
+
+      let adminName: string | undefined;
+      let adminEmail: string | undefined;
+
+      if (adminMember) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("username, email")
+          .eq("id", adminMember.user_id)
+          .single();
+
+        if (profile) {
+          adminName = profile.username;
+          adminEmail = profile.email;
+        }
+      }
+
+      return {
+        ...org,
+        project_count: projectCount ?? 0,
+        admin_name: adminName,
+        admin_email: adminEmail,
+      } as Organization;
+    })
+  );
+
+  return enriched;
+}
+
 export async function createOrganizationWithAdmin(
   orgName: string, 
   orgSlug: string, 

@@ -3,10 +3,9 @@
  * ----------------------
  * Dashboard shell layout — wraps all authenticated pages.
  * Provides the sidebar + header structure.
+ * Always shows sidebar (role-based nav items handled by sidebar component).
  *
- * IMPORTANT: This layout also enforces the "forced password change"
- * redirect. If the user's metadata says must_change_password = true,
- * they get sent to /change-password before accessing anything else.
+ * Enforces the "forced password change" redirect via banner.
  */
 
 import { cookies } from "next/headers";
@@ -25,34 +24,23 @@ export default async function DashboardLayout({
 }) {
   const supabase = await createClient();
 
-  // Get the current user
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // If not logged in, redirect to login
   if (!user) {
     redirect("/login");
   }
 
-  // If the user must change their password, redirect them
-  // But don't redirect if they're already on the change-password page
-  // (otherwise it creates an infinite redirect loop)
   const mustChangePassword = user.user_metadata?.must_change_password === true;
 
-  // We can't check the current path in a server layout easily,
-  // so we pass the flag to the client and handle it there.
-  // Actually, we can allow the change-password page to render normally.
-
-  // Get user info for the sidebar
   const userEmail = user.email || "";
   const userName = user.user_metadata?.display_name || user.email || "User";
   let userRole = user.user_metadata?.role || "member";
 
-  // Multi-tenant project context
   const cookieStore = await cookies();
   const activeProjectId = cookieStore.get("active_project_id")?.value;
-  
+
   let userOrgRole = userRole;
 
   const isDemo = await isDemoModeActive();
@@ -64,12 +52,19 @@ export default async function DashboardLayout({
     }
   }
 
-  const hideSidebar = !activeProjectId && userRole === "owner";
-  let projectName = hideSidebar ? "Owner Dashboard" : "Sprint Board";
+  let pageTitle = "Vortex PM";
+  const breadcrumbs: BreadcrumbItem[] = [];
 
-  const breadcrumbs: BreadcrumbItem[] = [
-    { label: "Home", href: "/orgs", icon: "Home" }
-  ];
+  // Build context based on role
+  if (userRole === "owner") {
+    pageTitle = "Platform Dashboard";
+    breadcrumbs.push({ label: "Dashboard", href: "/dashboard", icon: "Home" });
+  } else if (userRole === "admin") {
+    pageTitle = "Organization Dashboard";
+    breadcrumbs.push({ label: "Dashboard", href: "/dashboard", icon: "Home" });
+  } else {
+    breadcrumbs.push({ label: "Sprint Board", href: "/board", icon: "Home" });
+  }
 
   if (activeProjectId) {
     let project = null;
@@ -79,7 +74,7 @@ export default async function DashboardLayout({
       if (demoProject) {
         project = {
           ...demoProject,
-          organizations: { name: "Acme Corp (Demo)" }
+          organizations: { name: "Acme Corp (Demo)" },
         };
       }
     } else {
@@ -98,20 +93,23 @@ export default async function DashboardLayout({
     }
 
     if (project) {
-      const orgName = Array.isArray(project.organizations) 
-        ? project.organizations[0]?.name 
+      const orgName = Array.isArray(project.organizations)
+        ? project.organizations[0]?.name
         : (project.organizations as any)?.name || "Organization";
-        
-      projectName = `${orgName} / ${project.name}`;
-      breadcrumbs.push({ label: orgName, href: `/orgs/${project.org_id}`, icon: "Building2" });
+
+      pageTitle = `${orgName} / ${project.name}`;
+
+      if (userRole !== "member") {
+        breadcrumbs.push({ label: orgName, href: `/orgs/${(project as any).org_id}`, icon: "Building2" });
+      }
       breadcrumbs.push({ label: project.name, icon: "FolderKanban" });
 
-      // If not global owner, check org-specific role (skip if demo)
+      // Resolve org-specific role for non-owners
       if (userRole !== "owner" && !isDemo) {
         const { data: member } = await supabase
           .from("org_members")
           .select("role")
-          .eq("org_id", project.org_id)
+          .eq("org_id", (project as any).org_id)
           .eq("user_id", user.id)
           .single();
         if (member) {
@@ -121,36 +119,36 @@ export default async function DashboardLayout({
     }
   }
 
-  // Fetch available sprints for the header dropdown
+  // Fetch sprints for header dropdown (only relevant for board/reporting pages)
   let sprints: any[] = [];
   if (isDemo) {
     sprints = getMockSprints(activeProjectId);
-  } else {
+  } else if (activeProjectId) {
     sprints = await fetchSprints(activeProjectId);
   }
 
-  // Default to the most recent sprint (first in the list, already sorted desc)
   const defaultSprintId = sprints.length > 0 ? sprints[0].sprint_id : null;
+
+  // Determine if sprint selector should show
+  const showSprintSelector = !!activeProjectId && (userRole === "member" || userRole === "admin");
 
   return (
     <div className="flex h-screen overflow-hidden bg-neutral-950">
-      {/* Sidebar */}
-      {!hideSidebar && (
-        <Sidebar
-          userEmail={userEmail}
-          userName={userName}
-          userRole={userOrgRole}
-          activeProjectId={activeProjectId}
-        />
-      )}
+      {/* Sidebar — always visible, role-aware */}
+      <Sidebar
+        userEmail={userEmail}
+        userName={userName}
+        userRole={userOrgRole}
+        activeProjectId={activeProjectId}
+      />
 
       {/* Main content area */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header
           sprints={sprints}
           currentSprintId={defaultSprintId}
-          pageTitle={projectName}
-          hideSidebar={hideSidebar}
+          pageTitle={pageTitle}
+          showSprintSelector={showSprintSelector}
           userName={userName}
           userEmail={userEmail}
         />
@@ -158,7 +156,6 @@ export default async function DashboardLayout({
         {/* Page content — scrollable */}
         <main className="flex-1 overflow-auto p-6">
           <Breadcrumbs items={breadcrumbs} />
-          {/* If password change is required, show a warning banner */}
           {mustChangePassword && (
             <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-400 text-sm">
               ⚠️ You must change your password before continuing.{" "}
@@ -173,3 +170,4 @@ export default async function DashboardLayout({
     </div>
   );
 }
+

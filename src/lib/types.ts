@@ -61,15 +61,7 @@ export interface ProjectTask {
   updated_at: string;
 }
 
-// ─── Comment on a task row ───
-export interface TaskComment {
-  id: string;
-  task_id: string;
-  author_id: string;
-  author_name: string;
-  content: string;
-  created_at: string;
-}
+// ─── (TaskComment interface removed — Phase 3: comments removed) ───
 
 // ─── User profile info (from Supabase auth.users + metadata) ───
 export interface UserProfile {
@@ -99,8 +91,13 @@ export interface Organization {
   slug: string;
   logo_url: string | null;
   status: "active" | "paused";
+  subscription_plan: string;
   created_by: string;
   created_at: string;
+  // Virtual/joined fields (not always present)
+  project_count?: number;
+  admin_name?: string;
+  admin_email?: string;
 }
 
 export interface OrgMember {
@@ -118,9 +115,15 @@ export interface Project {
   jira_project_key: string;
   webhook_secret: string | null;
   field_mappings: Record<string, string>;
-  status: "active" | "archived";
+  status: "draft" | "active" | "archived";
+  wizard_step: number;
+  wizard_completed_at: string | null;
   created_by: string;
   created_at: string;
+  // Virtual/joined fields
+  member_count?: number;
+  sprint_count?: number;
+  updated_at?: string;
 }
 
 export interface Profile {
@@ -129,6 +132,7 @@ export interface Profile {
   email: string;
   org_id: string | null;
   role: string;
+  temp_password_changed: boolean;
   created_at: string;
 }
 
