@@ -24,6 +24,8 @@ export interface ColumnDefinition {
   is_filterable: boolean;
   is_editable: boolean;
   is_visible: boolean;
+  is_reportable: boolean;
+  validation_rules?: Record<string, any>;
   is_system: boolean;
   display_order: number;
   width_px: number;
@@ -148,6 +150,10 @@ export interface TaskFilters {
   status?: string | null;
   owner_id?: string | null;
   search?: string;
+  page?: number;
+  per_page?: number;
+  sort_key?: string;
+  sort_dir?: "asc" | "desc";
 }
 
 // ─── Sprint info for the dropdown selector ───

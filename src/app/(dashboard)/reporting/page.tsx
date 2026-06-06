@@ -1,38 +1,37 @@
-/**
- * (dashboard)/qbr/page.tsx
- * ------------------------
- * QBR (Quarterly Business Review) Presentation page.
- * Shows high-level visualizations: Absorption Rate and Velocity Trends.
- * This aggregates data across ALL sprints and users to give managers
- * a bird's-eye view of team performance.
- *
- * Wrapped in a Suspense boundary to show ChartSkeleton while data aggregates.
- */
-
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { ChartCard } from "@/components/charts/chart-card";
 import { AbsorptionChart } from "@/components/charts/absorption-chart";
 import { VelocityChart } from "@/components/charts/velocity-chart";
 import { ChartSkeleton } from "@/components/loading-skeleton";
-import type { AbsorptionDataPoint, VelocityDataPoint } from "@/lib/types";
+import { SprintSelector } from "./sprint-selector";
+import { ExportReportButton } from "./export-button";
+import type { AbsorptionDataPoint, VelocityDataPoint, SprintOption } from "@/lib/types";
+import { fetchSprints } from "@/lib/actions/tasks";
+import { cookies } from "next/headers";
 
 // The actual data-fetching component
-async function QBRContent() {
+async function ReportingContent({ selectedSprints }: { selectedSprints: string[] }) {
   const supabase = await createClient();
+  const cookieStore = await cookies();
+  const activeProjectId = cookieStore.get("active_project_id")?.value;
 
   // Ensure user is authenticated
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
-  // ── Fetch data for charts ──
-  const { data: allTasks, error } = await supabase
-    .from("jira_tasks_snapshot")
-    .select("*")
-    .order("sprint_start_date", { ascending: false });
+  // Fetch tasks
+  let query = supabase.from("project_tasks").select("*");
+  if (activeProjectId) {
+    query = query.eq("project_id", activeProjectId);
+  }
+  if (selectedSprints.length > 0) {
+    query = query.in("sprint_id", selectedSprints);
+  } else {
+    query = query.not("sprint_id", "is", null);
+  }
+
+  const { data: allTasks, error } = await query;
 
   if (error || !allTasks) {
     return (
@@ -60,15 +59,16 @@ async function QBRContent() {
     }
 
     const aggregated = sprintMap.get(sprintName)!;
+    const storyPoints = Number(task.custom_fields?.story_points || 0);
 
-    if (task.planned_in_sprint) {
+    if (task.custom_fields?.planned_in_sprint) {
       aggregated.planned_count += 1;
-      aggregated.planned_points += Number(task.story_points || 0);
+      aggregated.planned_points += storyPoints;
     }
 
-    if (task.added_mid_sprint) {
+    if (task.custom_fields?.added_mid_sprint) {
       aggregated.adhoc_count += 1;
-      aggregated.adhoc_points += Number(task.story_points || 0);
+      aggregated.adhoc_points += storyPoints;
     }
   });
 
@@ -76,12 +76,15 @@ async function QBRContent() {
 
   // ── Aggregate Data: Velocity ──
   const monthMap = new Map<string, VelocityDataPoint>();
-  const finalizedStatuses = ["Done", "Resolved", "Verified", "Closed"];
+  const finalizedStatuses = ["Done", "Resolved", "Verified", "Closed", "Completed"];
 
   allTasks.forEach((task) => {
-    if (!finalizedStatuses.includes(task.status) || !task.done_at) return;
+    const status = task.custom_fields?.status;
+    const doneAt = task.custom_fields?.done_at || task.updated_at;
+    
+    if (!status || !finalizedStatuses.includes(status) || !doneAt) return;
 
-    const date = new Date(task.done_at);
+    const date = new Date(doneAt);
     const monthKey = date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
 
     if (!monthMap.has(monthKey)) {
@@ -94,7 +97,7 @@ async function QBRContent() {
 
     const aggregated = monthMap.get(monthKey)!;
     aggregated.completed_count += 1;
-    aggregated.completed_points += Number(task.story_points || 0);
+    aggregated.completed_points += Number(task.custom_fields?.story_points || 0);
   });
 
   const velocityData = Array.from(monthMap.values()).sort((a, b) => {
@@ -103,6 +106,10 @@ async function QBRContent() {
 
   return (
     <>
+      <div className="flex justify-end mb-4">
+        <ExportReportButton absorptionData={absorptionData} velocityData={velocityData} />
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <ChartCard
           title="Sprint Absorption"
@@ -119,7 +126,7 @@ async function QBRContent() {
         </ChartCard>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
          <ChartCard
           title="Sprint Absorption (Story Points)"
           description="Planned Work vs Ad-hoc Injections (Last 10 Sprints, by SP)"
@@ -131,18 +138,29 @@ async function QBRContent() {
   );
 }
 
-export default function QBRPage() {
+export default async function ReportingPage(props: { searchParams: Promise<{ sprints?: string }> }) {
+  const searchParams = await props.searchParams;
+  const sprintsParam = searchParams.sprints;
+  const selectedSprints = sprintsParam ? sprintsParam.split(",") : [];
+
+  const cookieStore = await cookies();
+  const activeProjectId = cookieStore.get("active_project_id")?.value;
+  const allSprints = await fetchSprints(activeProjectId);
+
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
-      <div>
-        <h2 className="text-2xl font-semibold text-neutral-100">QBR Presentation</h2>
-        <p className="text-neutral-400 mt-1">
-          High-level metrics aggregated across all sprints and team members.
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold text-neutral-100">Reporting</h2>
+          <p className="text-neutral-400 mt-1">
+            High-level metrics aggregated across your sprints and team members.
+          </p>
+        </div>
+        <SprintSelector sprints={allSprints} />
       </div>
 
       <Suspense fallback={<ChartSkeleton />}>
-        <QBRContent />
+        <ReportingContent selectedSprints={selectedSprints} />
       </Suspense>
     </div>
   );

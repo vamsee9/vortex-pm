@@ -1,8 +1,8 @@
 /**
  * (dashboard)/admin/page.tsx
  * --------------------------
- * Admin page for managing team members.
- * Only visible to users with role = "admin".
+ * Admin page for managing team members across all organizations.
+ * Only visible to users with role = "owner".
  *
  * Features:
  * - Add a new team member (generates temp password)
@@ -87,15 +87,15 @@ export default function AdminPage() {
   } | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // Check if the current user is an admin
-  const [isAdmin, setIsAdmin] = useState(false);
+  // Check if the current user is an owner
+  const [isOwner, setIsOwner] = useState(false);
 
   // ── Fetch team members ──
   const fetchMembers = useCallback(async () => {
     try {
       const response = await fetch("/api/admin/users");
       if (response.status === 403) {
-        setIsAdmin(false);
+        setIsOwner(false);
         return;
       }
       if (!response.ok) {
@@ -103,7 +103,7 @@ export default function AdminPage() {
       }
       const data = await response.json();
       setMembers(data.users || []);
-      setIsAdmin(true);
+      setIsOwner(true);
     } catch (err) {
       console.error("Error fetching members:", err);
       setError("Failed to load team members.");
@@ -113,10 +113,10 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    // Verify admin status client-side too
+    // Verify owner status client-side too
     const supabase = createClient();
     supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user?.user_metadata?.role !== "admin") {
+      if (user?.user_metadata?.role !== "owner") {
         router.push("/board");
         return;
       }
@@ -200,13 +200,13 @@ export default function AdminPage() {
     toast.success("Copied to clipboard!");
   }
 
-  // If not admin, show nothing (redirect happens in useEffect)
-  if (!isAdmin && !loading) {
+  // If not owner, show nothing (redirect happens in useEffect)
+  if (!isOwner && !loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="flex items-center gap-3 text-neutral-400">
           <ShieldAlert className="w-5 h-5" />
-          <p>You need admin access to view this page.</p>
+          <p>You need Owner access to view this page.</p>
         </div>
       </div>
     );

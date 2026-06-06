@@ -64,8 +64,8 @@ export default async function DashboardLayout({
     }
   }
 
-  const hideSidebar = !activeProjectId && userRole === "admin";
-  let projectName = hideSidebar ? "Admin Dashboard" : "Sprint Board";
+  const hideSidebar = !activeProjectId && userRole === "owner";
+  let projectName = hideSidebar ? "Owner Dashboard" : "Sprint Board";
 
   const breadcrumbs: BreadcrumbItem[] = [
     { label: "Home", href: "/orgs", icon: "Home" }
@@ -106,8 +106,8 @@ export default async function DashboardLayout({
       breadcrumbs.push({ label: orgName, href: `/orgs/${project.org_id}`, icon: "Building2" });
       breadcrumbs.push({ label: project.name, icon: "FolderKanban" });
 
-      // If not global admin, check org-specific role (skip if demo)
-      if (userRole !== "admin" && !isDemo) {
+      // If not global owner, check org-specific role (skip if demo)
+      if (userRole !== "owner" && !isDemo) {
         const { data: member } = await supabase
           .from("org_members")
           .select("role")

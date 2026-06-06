@@ -14,10 +14,10 @@ export async function checkIsOrgAdmin(orgId: string): Promise<boolean> {
   return data?.role === 'admin';
 }
 
-export async function checkIsGlobalAdmin(): Promise<boolean> {
+export async function checkIsOwner(): Promise<boolean> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  return user?.user_metadata?.role === 'admin';
+  return user?.user_metadata?.role === 'owner';
 }
 
 /**

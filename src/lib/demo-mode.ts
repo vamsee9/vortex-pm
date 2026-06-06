@@ -17,31 +17,31 @@ function getDemoData() {
       projects: [{ id: MOCK_PROJECT_ID, org_id: MOCK_ORG_ID, name: "Mobile App (Demo)", jira_project_key: "MOB", status: "active" }],
       sprints: [{ sprint_id: "sprint-1", project_id: MOCK_PROJECT_ID, sprint_name: "Sprint 1", state: "active" }],
       tasks: [
-        { 
-          id: "task-1", 
-          project_id: MOCK_PROJECT_ID, 
-          jira_key: "MOB-1", 
-          sprint_id: "sprint-1", 
-          custom_fields: {
-            summary: "Design Login Screen", 
-            status: "Done", 
-            priority: "High", 
-            work_type: "Story", 
-            story_points: 5, 
-            assignees: ["Alice"]
-          } 
-        },
-        { 
-          id: "task-2", 
-          project_id: MOCK_PROJECT_ID, 
-          jira_key: "MOB-2", 
+        {
+          id: "task-1",
+          project_id: MOCK_PROJECT_ID,
+          jira_key: "MOB-1",
           sprint_id: "sprint-1",
           custom_fields: {
-            summary: "Setup API Gateway", 
-            status: "In Progress", 
-            priority: "Highest", 
-            work_type: "Task", 
-            story_points: 8, 
+            summary: "Design Login Screen",
+            status: "Done",
+            priority: "High",
+            work_type: "Story",
+            story_points: 5,
+            assignees: ["Alice"]
+          }
+        },
+        {
+          id: "task-2",
+          project_id: MOCK_PROJECT_ID,
+          jira_key: "MOB-2",
+          sprint_id: "sprint-1",
+          custom_fields: {
+            summary: "Setup API Gateway",
+            status: "In Progress",
+            priority: "Highest",
+            work_type: "Task",
+            story_points: 8,
             assignees: ["Bob"]
           }
         }

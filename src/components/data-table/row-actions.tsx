@@ -1,12 +1,8 @@
 /**
  * data-table/row-actions.tsx
  * --------------------------
- * Per-row action dropdown menu for the data table.
- * Shows different actions based on whether the user owns the row:
- *
- * Own rows:   Edit (future), Delete
- * Other rows: Duplicate to My Sheet
- * All rows:   Add Comment
+ * Per-row action dropdown menu (TableCN style).
+ * Clean ··· trigger, standard shadcn dropdown items.
  */
 
 "use client";
@@ -31,11 +27,7 @@ interface RowActionsProps {
   onOpenComments: (taskId: string) => void;
 }
 
-export function RowActions({
-  task,
-  isOwner,
-  onOpenComments,
-}: RowActionsProps) {
+export function RowActions({ task, isOwner, onOpenComments }: RowActionsProps) {
   const [loading, setLoading] = useState(false);
 
   async function handleDuplicate() {
@@ -55,11 +47,7 @@ export function RowActions({
   }
 
   async function handleDelete() {
-    // Confirm before deleting
-    if (!confirm(`Are you sure you want to delete ${task.jira_key}?`)) {
-      return;
-    }
-
+    if (!confirm(`Are you sure you want to delete ${task.jira_key}?`)) return;
     setLoading(true);
     try {
       const result = await deleteTask(task.id);
@@ -80,33 +68,25 @@ export function RowActions({
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
-          size="sm"
+          size="icon"
           disabled={loading}
-          className="h-8 w-8 p-0 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800"
+          className="h-8 w-8 p-0 data-[state=open]:bg-muted"
         >
-          <MoreHorizontal className="w-4 h-4" />
+          <MoreHorizontal className="h-4 w-4" />
+          <span className="sr-only">Open menu</span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        className="bg-neutral-900 border-neutral-700"
-      >
-        {/* Comment action — available to everyone */}
-        <DropdownMenuItem
-          onClick={() => onOpenComments(task.id)}
-          className="text-neutral-300 focus:bg-neutral-800 focus:text-neutral-100 cursor-pointer"
-        >
-          <MessageSquare className="w-3.5 h-3.5 mr-2" />
+      <DropdownMenuContent align="end" className="w-[160px]">
+        {/* Comment — available to everyone */}
+        <DropdownMenuItem onClick={() => onOpenComments(task.id)}>
+          <MessageSquare className="mr-2 h-3.5 w-3.5" />
           Add Comment
         </DropdownMenuItem>
 
         {/* Duplicate — available on rows you DON'T own */}
         {!isOwner && (
-          <DropdownMenuItem
-            onClick={handleDuplicate}
-            className="text-neutral-300 focus:bg-neutral-800 focus:text-neutral-100 cursor-pointer"
-          >
-            <Copy className="w-3.5 h-3.5 mr-2" />
+          <DropdownMenuItem onClick={handleDuplicate}>
+            <Copy className="mr-2 h-3.5 w-3.5" />
             Duplicate to My Sheet
           </DropdownMenuItem>
         )}
@@ -114,12 +94,12 @@ export function RowActions({
         {/* Delete — only on rows you own */}
         {isOwner && (
           <>
-            <DropdownMenuSeparator className="bg-neutral-700" />
+            <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={handleDelete}
-              className="text-red-400 focus:bg-red-500/10 focus:text-red-300 cursor-pointer"
+              className="text-destructive focus:text-destructive"
             >
-              <Trash2 className="w-3.5 h-3.5 mr-2" />
+              <Trash2 className="mr-2 h-3.5 w-3.5" />
               Delete
             </DropdownMenuItem>
           </>

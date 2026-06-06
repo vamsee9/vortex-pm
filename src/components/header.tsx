@@ -126,7 +126,7 @@ export function Header({ sprints, currentSprintId, pageTitle, hideSidebar, userN
         </div>
       )}
 
-      {/* Global Admin User Menu (Only shown when sidebar is hidden) */}
+      {/* Global Owner User Menu (Only shown when sidebar is hidden) */}
       {hideSidebar && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

@@ -18,7 +18,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Loader2, Plus, Building2, ArrowRight, ShieldAlert, Check, X } from "lucide-react";
 import { toast } from "sonner";
 import { fetchOrganizations, createOrganizationWithAdmin } from "@/lib/actions/organizations";
-import { checkIsGlobalAdmin } from "@/lib/actions/lifecycle";
+import { checkIsOwner } from "@/lib/actions/lifecycle";
 import { isDemoModeActive, enableDemoMode, disableDemoMode } from "@/lib/demo-mode";
 import type { Organization } from "@/lib/types";
 import { Copy } from "lucide-react";
@@ -28,7 +28,7 @@ export default function OrganizationsPage() {
   const [orgs, setOrgs] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(true);
   
-  const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
   const [demoActive, setDemoActive] = useState(false);
 
   // Form State
@@ -49,8 +49,8 @@ export default function OrganizationsPage() {
       const demoCheck = await isDemoModeActive();
       setDemoActive(demoCheck);
 
-      const adminCheck = await checkIsGlobalAdmin();
-      setIsGlobalAdmin(adminCheck);
+      const ownerCheck = await checkIsOwner();
+      setIsOwner(ownerCheck);
 
       if (!demoCheck) {
         const data = await fetchOrganizations();
@@ -327,12 +327,12 @@ export default function OrganizationsPage() {
         </div>
       )}
 
-      {/* Global Admin: Demo Mode Sandbox */}
-      {isGlobalAdmin && (
+      {/* Global Owner: Demo Mode Sandbox */}
+      {isOwner && (
         <div className="mt-12 pt-8 border-t border-neutral-800">
           <Card className="bg-emerald-500/5 border-emerald-500/20">
             <CardHeader>
-              <CardTitle className="text-lg text-emerald-400">Application Admin Demo Sandbox</CardTitle>
+              <CardTitle className="text-lg text-emerald-400">Owner Demo Sandbox</CardTitle>
               <CardDescription className="text-neutral-400">
                 Impersonate organizational roles and interact with isolated dummy data to test UI/UX workflows safely.
               </CardDescription>

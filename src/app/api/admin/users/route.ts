@@ -2,7 +2,7 @@
  * api/admin/users/route.ts
  * ------------------------
  * Admin-only API endpoint for managing team members.
- * Only users with role = "admin" in their user_metadata can use this.
+ * Only users with role = "owner" in their user_metadata can use this.
  *
  * Endpoints:
  * - GET  → List all users in the system
@@ -165,14 +165,14 @@ async function verifyAdmin(): Promise<NextResponse | null> {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  if (user.user_metadata?.role !== "admin") {
+  if (user.user_metadata?.role !== "owner") {
     return NextResponse.json(
-      { error: "Only admins can manage users." },
+      { error: "Only owners can manage users." },
       { status: 403 }
     );
   }
 
-  // All good — caller is admin
+  // All good — caller is owner
   return null;
 }
 

@@ -19,10 +19,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Sprint Metrics Dashboard | Jira Analytics",
+  title: "Vortex | Plan. Track. Deliver.",
   description:
-    "Track sprint velocity, absorption rates, and team delivery metrics. " +
-    "Built for coordinate managers managing contract deliverables.",
+    "Enterprise-grade sprint management and reporting platform.",
 };
 
 export default function RootLayout({

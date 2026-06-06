@@ -156,9 +156,6 @@ export default function SettingsPage() {
           <TabsTrigger value="integrations" className="data-[state=active]:bg-neutral-800 data-[state=active]:text-neutral-100 text-neutral-400">
             Integrations
           </TabsTrigger>
-          <TabsTrigger value="about" className="data-[state=active]:bg-neutral-800 data-[state=active]:text-neutral-100 text-neutral-400">
-            About System
-          </TabsTrigger>
         </TabsList>
 
         {/* ─── Tab 1: Metadata ─── */}
@@ -332,32 +329,6 @@ export default function SettingsPage() {
                   )}
                 </div>
                 <p className="text-xs text-neutral-500">Use this token to authenticate incoming Jira payloads. Keep it secure.</p>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* ─── Tab 3: About ─── */}
-        <TabsContent value="about" className="space-y-6 outline-none">
-          <Card className="bg-neutral-900/80 border-neutral-800">
-            <CardHeader>
-              <CardTitle className="text-lg text-neutral-100 flex items-center gap-2">
-                <Info className="w-5 h-5 text-purple-400" />
-                System Information
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 text-sm text-neutral-300">
-              <div className="flex justify-between py-2 border-b border-neutral-800/50">
-                <span className="text-neutral-500">Application Version</span>
-                <span className="font-mono">v1.2.0 (Stable)</span>
-              </div>
-              <div className="flex justify-between py-2 border-b border-neutral-800/50">
-                <span className="text-neutral-500">Database Connection</span>
-                <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">Connected (Supabase)</Badge>
-              </div>
-              <div className="flex justify-between py-2 border-b border-neutral-800/50">
-                <span className="text-neutral-500">Node Environment</span>
-                <span className="font-mono">{process.env.NODE_ENV || 'production'}</span>
               </div>
             </CardContent>
           </Card>

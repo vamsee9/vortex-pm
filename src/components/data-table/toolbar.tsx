@@ -2,35 +2,51 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { Search, Download, RotateCcw } from "lucide-react";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+} from "@/components/ui/command";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { CirclePlus, X, Download, Settings2, Check, RotateCcw } from "lucide-react";
 import type { ProjectTask, ColumnDefinition } from "@/lib/types";
 import { exportTasksToExcel } from "@/lib/excel-export";
+import type { ColumnPreference } from "./use-column-preferences";
+import { cn } from "@/lib/utils";
 
 interface ToolbarProps {
   tasks: ProjectTask[];
   sprintName?: string;
   columnDefs: ColumnDefinition[];
+  preferences: Record<string, ColumnPreference>;
+  updatePreference: (key: string, updates: Partial<ColumnPreference>) => void;
 }
 
-export function DataTableToolbar({ tasks, sprintName, columnDefs }: ToolbarProps) {
+export function DataTableToolbar({ tasks, sprintName, columnDefs, preferences, updatePreference }: ToolbarProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Controlled search input with proper debounce
+  // ─── Search ───
   const currentSearch = searchParams.get("search") || "";
   const [searchValue, setSearchValue] = useState(currentSearch);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
@@ -47,6 +63,34 @@ export function DataTableToolbar({ tasks, sprintName, columnDefs }: ToolbarProps
       } else {
         params.delete(key);
       }
+      // Reset to page 1 when filters change
+      params.delete("page");
+      router.push(`?${params.toString()}`);
+    },
+    [router, searchParams]
+  );
+
+  const toggleFilterValue = useCallback(
+    (key: string, value: string) => {
+      const params = new URLSearchParams(searchParams.toString());
+      const current = params.get(key);
+
+      // Support multi-value filters separated by commas
+      const currentValues = current ? current.split(",") : [];
+      const idx = currentValues.indexOf(value);
+
+      if (idx >= 0) {
+        currentValues.splice(idx, 1);
+      } else {
+        currentValues.push(value);
+      }
+
+      if (currentValues.length > 0) {
+        params.set(key, currentValues.join(","));
+      } else {
+        params.delete(key);
+      }
+      params.delete("page");
       router.push(`?${params.toString()}`);
     },
     [router, searchParams]
@@ -73,84 +117,170 @@ export function DataTableToolbar({ tasks, sprintName, columnDefs }: ToolbarProps
     (c) => c.is_filterable && c.data_type === "select"
   );
 
-  const hasActiveFilters = 
-    currentSearch || 
-    filterableSelects.some(c => !!searchParams.get(c.key));
+  const hasActiveFilters =
+    currentSearch ||
+    filterableSelects.some((c) => !!searchParams.get(c.key));
 
   return (
-    <div className="flex flex-wrap items-center gap-3 pb-4">
-      <div className="relative flex-1 min-w-[200px] max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+    <div role="toolbar" aria-orientation="horizontal" className="flex w-full items-start justify-between gap-2 p-1">
+      {/* ─── Left: Search + Filter Chips ─── */}
+      <div className="flex flex-1 flex-wrap items-center gap-2">
         <Input
-          placeholder="Search by key or summary..."
+          placeholder="Search titles..."
           value={searchValue}
           onChange={(e) => handleSearchChange(e.target.value)}
-          className="pl-9 bg-neutral-900 border-neutral-700 text-neutral-200 placeholder:text-neutral-500"
+          className="h-8 w-40 lg:w-56"
         />
+
+        {/* Dynamic filter chips (TableCN style: dashed border + CirclePlus icon) */}
+        {filterableSelects.map((col) => {
+          const currentParamVal = searchParams.get(col.key) || "";
+          const selectedValues = currentParamVal ? currentParamVal.split(",") : [];
+          const hasValues = selectedValues.length > 0;
+
+          return (
+            <Popover key={col.key}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={cn(
+                    "h-8 gap-1.5 border-dashed font-normal",
+                    hasValues && "border-solid"
+                  )}
+                >
+                  <CirclePlus className="h-3.5 w-3.5" />
+                  {col.label}
+                  {hasValues && (
+                    <>
+                      <Separator orientation="vertical" className="mx-0.5 h-4" />
+                      <div className="flex gap-1">
+                        {selectedValues.length > 2 ? (
+                          <Badge variant="secondary" className="rounded-sm px-1 font-normal">
+                            {selectedValues.length} selected
+                          </Badge>
+                        ) : (
+                          selectedValues.map((v) => (
+                            <Badge
+                              key={v}
+                              variant="secondary"
+                              className="rounded-sm px-1 font-normal"
+                            >
+                              {col.options?.find((o) => o.value === v)?.label || v}
+                            </Badge>
+                          ))
+                        )}
+                      </div>
+                    </>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[200px] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder={`Filter ${col.label.toLowerCase()}...`} />
+                  <CommandList>
+                    <CommandEmpty>No results found.</CommandEmpty>
+                    <CommandGroup>
+                      {col.options?.map((opt) => {
+                        const isSelected = selectedValues.includes(opt.value);
+                        return (
+                          <CommandItem
+                            key={opt.value}
+                            onSelect={() => toggleFilterValue(col.key, opt.value)}
+                          >
+                            <div
+                              className={cn(
+                                "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
+                                isSelected
+                                  ? "bg-primary text-primary-foreground"
+                                  : "opacity-50 [&_svg]:invisible"
+                              )}
+                            >
+                              <Check className="h-3 w-3" />
+                            </div>
+                            {opt.color && (
+                              <span
+                                className="mr-2 h-2 w-2 rounded-full shrink-0"
+                                style={{ backgroundColor: opt.color }}
+                              />
+                            )}
+                            <span>{opt.label}</span>
+                          </CommandItem>
+                        );
+                      })}
+                    </CommandGroup>
+                    {hasValues && (
+                      <>
+                        <CommandSeparator />
+                        <CommandGroup>
+                          <CommandItem
+                            onSelect={() => setFilter(col.key, "")}
+                            className="justify-center text-center"
+                          >
+                            Clear filter
+                          </CommandItem>
+                        </CommandGroup>
+                      </>
+                    )}
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+          );
+        })}
+
+        {/* Reset all filters */}
+        {hasActiveFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={resetFilters}
+            className="h-8 px-2 lg:px-3"
+          >
+            <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+            Reset
+          </Button>
+        )}
       </div>
 
-      {/* Dynamic Filters */}
-      {filterableSelects.map((col) => {
-        const currentVal = searchParams.get(col.key) || "";
-        return (
-          <Select 
-            key={col.key} 
-            value={currentVal || "all"} 
-            onValueChange={(v) => setFilter(col.key, v)}
-          >
-            <SelectTrigger className="w-auto min-w-[130px] bg-neutral-900 border-neutral-700 text-neutral-300">
-              <SelectValue placeholder={col.label} />
-            </SelectTrigger>
-            <SelectContent className="bg-neutral-900 border-neutral-700">
-              <SelectItem value="all" className="text-neutral-300">
-                All {col.label}s
-              </SelectItem>
-              {col.options?.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value} className="text-neutral-300">
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        );
-      })}
-
-      {hasActiveFilters && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={resetFilters}
-              className="text-neutral-400 hover:text-neutral-200"
-            >
-              <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
-              Reset
+      {/* ─── Right: View / Columns / Export ─── */}
+      <div className="flex items-center gap-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="h-8 gap-1.5 font-normal">
+              <Settings2 className="h-3.5 w-3.5" />
+              View
             </Button>
-          </TooltipTrigger>
-          <TooltipContent className="bg-neutral-800 border-neutral-700 text-neutral-200">
-            Clear all active filters
-          </TooltipContent>
-        </Tooltip>
-      )}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-[160px]">
+            <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {columnDefs.map((col) => {
+              const isVisible = preferences[col.key]?.isVisible !== false;
+              return (
+                <DropdownMenuCheckboxItem
+                  key={col.key}
+                  checked={isVisible}
+                  onCheckedChange={(v) => updatePreference(col.key, { isVisible: v })}
+                >
+                  {col.label}
+                </DropdownMenuCheckboxItem>
+              );
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
 
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => exportTasksToExcel(tasks, sprintName || "All Sprints")}
-            disabled={tasks.length === 0}
-            className="ml-auto border-neutral-700 text-neutral-300 hover:text-neutral-100 hover:bg-neutral-800"
-          >
-            <Download className="w-3.5 h-3.5 mr-1.5" />
-            Export Excel
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent className="bg-neutral-800 border-neutral-700 text-neutral-200">
-          Download current view as Excel (.xlsx)
-        </TooltipContent>
-      </Tooltip>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => exportTasksToExcel(tasks, sprintName || "All Sprints")}
+          disabled={tasks.length === 0}
+          className="h-8 gap-1.5 font-normal"
+        >
+          <Download className="h-3.5 w-3.5" />
+          Export
+        </Button>
+      </div>
     </div>
   );
 }

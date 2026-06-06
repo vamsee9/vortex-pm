@@ -67,8 +67,8 @@ export async function createOrganizationWithAdmin(
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  if (!user || user.user_metadata?.role !== "admin") {
-    throw new Error("Only global admins can create organizations");
+  if (!user || user.user_metadata?.role !== "owner") {
+    throw new Error("Only global owners can create organizations");
   }
 
   const adminClient = createAdminClient();
@@ -127,17 +127,17 @@ export async function createOrganizationWithAdmin(
     throw new Error(`Failed to create user profile: ${profileError.message}`);
   }
 
-  // 5. Add to org_members as owner
+  // 5. Add to org_members as admin
   const { error: memberError } = await adminClient
     .from("org_members")
-    .insert([{ org_id: org.id, user_id: newUserId, role: "owner" }]);
+    .insert([{ org_id: org.id, user_id: newUserId, role: "admin" }]);
     
   if (memberError) {
     // Rollback Profile, User, and Org
     await adminClient.from("profiles").delete().eq("id", newUserId);
     await adminClient.auth.admin.deleteUser(newUserId);
     await adminClient.from("organizations").delete().eq("id", org.id);
-    throw new Error(`Failed to assign organization owner: ${memberError.message}`);
+    throw new Error(`Failed to assign organization admin: ${memberError.message}`);
   }
 
   revalidatePath("/orgs");
@@ -174,8 +174,8 @@ export async function deleteOrganizationCascading(id: string) {
     throw new Error("Not authenticated");
   }
 
-  // Double check if the user is a global admin or org admin
-  const isGlobalAdmin = user.user_metadata?.role === "admin";
+  // Double check if the user is a global owner or org admin
+  const isOwner = user.user_metadata?.role === "owner";
   const adminClient = createAdminClient();
 
   // 1. Delete the organization
@@ -188,8 +188,8 @@ export async function deleteOrganizationCascading(id: string) {
     throw new Error(`Failed to delete organization: ${orgError.message}`);
   }
 
-  // 2. If the user is NOT a global admin, purge their user account
-  if (!isGlobalAdmin) {
+  // 2. If the user is NOT a global owner, purge their user account
+  if (!isOwner) {
     const { error: authError } = await adminClient.auth.admin.deleteUser(user.id);
     if (authError) {
       console.error(`Failed to delete user account ${user.id} during org cascade delete:`, authError);

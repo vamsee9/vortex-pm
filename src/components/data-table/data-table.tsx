@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useRef, useEffect, useCallback, useTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Table,
   TableBody,
@@ -9,31 +10,40 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { buildColumnsFromDefinitions, SortableHeader, DataTableColumnDef } from "./columns";
+import { buildColumnsFromDefinitions, SortableHeader } from "./columns";
 import { DataTableToolbar } from "./toolbar";
 import { RowActions } from "./row-actions";
 import { CommentsDialog } from "@/components/comments-dialog";
+import { DataTablePagination } from "./pagination";
+import { useColumnPreferences } from "./use-column-preferences";
 import type { ProjectTask, ColumnDefinition } from "@/lib/types";
-import { Inbox, Loader2 } from "lucide-react";
+import { Loader2, Trash2, X, Inbox } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { updateTaskCustomField } from "@/lib/actions/tasks";
+import { updateTaskCustomField, deleteTask } from "@/lib/actions/tasks";
 import { toast } from "sonner";
 
 interface DataTableProps {
   tasks: ProjectTask[];
+  totalCount: number;
   currentUserId: string;
   sprintName?: string;
   columnDefs: ColumnDefinition[];
+  projectId?: string;
 }
 
-export function DataTable({ tasks, currentUserId, sprintName, columnDefs }: DataTableProps) {
-  // Sorting state
-  const [sortKey, setSortKey] = useState<string>("updated_at");
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+export function DataTable({ tasks, totalCount, currentUserId, sprintName, columnDefs, projectId }: DataTableProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // URL-driven Sorting state
+  const sortKey = searchParams.get("sort") || "updated_at";
+  const sortDirection = (searchParams.get("dir") as "asc" | "desc") || "desc";
 
   // Comments dialog state
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -41,40 +51,33 @@ export function DataTable({ tasks, currentUserId, sprintName, columnDefs }: Data
   const [selectedTaskKey, setSelectedTaskKey] = useState<string>("");
   const [isPending, startTransition] = useTransition();
 
-  // Re-build column renderers whenever schema changes
+  // Row Selection state
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+
+  // Preferences hook
+  const { preferences, updatePreference, isLoaded } = useColumnPreferences(projectId || "default", columnDefs);
+
+  // Re-build column renderers whenever schema or preferences change
   const columns = useMemo(() => {
-    return buildColumnsFromDefinitions(columnDefs);
-  }, [columnDefs]);
+    return buildColumnsFromDefinitions(columnDefs, preferences);
+  }, [columnDefs, preferences]);
 
   // ─── Column Resizing State ───
-  const initialWidths = useMemo(() => {
-    const widths: Record<string, number> = {};
-    columns.forEach((col) => {
-      widths[col.key] = col.def.width_px || 120;
-    });
-    return widths;
-  }, [columns]);
-
-  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(initialWidths);
   const [isResizing, setIsResizing] = useState<string | null>(null);
-  
   const resizeState = useRef<{ startX: number; startWidth: number } | null>(null);
 
-  const onMouseDown = (e: React.MouseEvent, colKey: string) => {
+  const onMouseDown = (e: React.MouseEvent, colKey: string, currentWidth: number) => {
     e.preventDefault();
     setIsResizing(colKey);
-    resizeState.current = {
-      startX: e.clientX,
-      startWidth: columnWidths[colKey],
-    };
+    resizeState.current = { startX: e.clientX, startWidth: currentWidth };
   };
 
   const onMouseMove = useCallback((e: MouseEvent) => {
     if (!isResizing || !resizeState.current) return;
     const delta = e.clientX - resizeState.current.startX;
     const newWidth = Math.max(50, resizeState.current.startWidth + delta);
-    setColumnWidths((prev) => ({ ...prev, [isResizing]: newWidth }));
-  }, [isResizing]);
+    updatePreference(isResizing, { width: newWidth });
+  }, [isResizing, updatePreference]);
 
   const onMouseUp = useCallback(() => {
     if (isResizing) {
@@ -88,27 +91,31 @@ export function DataTable({ tasks, currentUserId, sprintName, columnDefs }: Data
       window.addEventListener("mousemove", onMouseMove);
       window.addEventListener("mouseup", onMouseUp);
       document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
     } else {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
       document.body.style.cursor = "";
+      document.body.style.userSelect = "";
     }
     return () => {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
       document.body.style.cursor = "";
+      document.body.style.userSelect = "";
     };
   }, [isResizing, onMouseMove, onMouseUp]);
 
-
-  // Handle column sort toggling
+  // Handle column sort toggling via URL
   function handleSort(key: string) {
+    const params = new URLSearchParams(searchParams.toString());
     if (sortKey === key) {
-      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+      params.set("dir", sortDirection === "asc" ? "desc" : "asc");
     } else {
-      setSortKey(key);
-      setSortDirection("asc");
+      params.set("sort", key);
+      params.set("dir", "asc");
     }
+    router.push(`?${params.toString()}`);
   }
 
   // Handle inline edits
@@ -123,38 +130,38 @@ export function DataTable({ tasks, currentUserId, sprintName, columnDefs }: Data
     });
   };
 
-  // Sort the tasks client-side
-  const sortedTasks = useMemo(() => {
-    const sorted = [...tasks].sort((a, b) => {
-      // First check core fields, then custom_fields
-      const aValue = (a as any)[sortKey] ?? a.custom_fields?.[sortKey];
-      const bValue = (b as any)[sortKey] ?? b.custom_fields?.[sortKey];
+  // Row selection toggles
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedRows(new Set(tasks.map((t) => t.id)));
+    } else {
+      setSelectedRows(new Set());
+    }
+  };
 
-      if (aValue == null && bValue == null) return 0;
-      if (aValue == null) return 1;
-      if (bValue == null) return -1;
+  const handleSelectRow = (taskId: string, checked: boolean) => {
+    const next = new Set(selectedRows);
+    if (checked) next.add(taskId);
+    else next.delete(taskId);
+    setSelectedRows(next);
+  };
 
-      if (typeof aValue === "string" && typeof bValue === "string") {
-        return sortDirection === "asc"
-          ? aValue.localeCompare(bValue)
-          : bValue.localeCompare(aValue);
+  const handleBulkDelete = async () => {
+    if (!confirm(`Are you sure you want to delete ${selectedRows.size} task(s)?`)) return;
+    startTransition(async () => {
+      let errCount = 0;
+      for (const id of Array.from(selectedRows)) {
+        const res = await deleteTask(id);
+        if (!res.success) errCount++;
       }
-
-      if (typeof aValue === "number" && typeof bValue === "number") {
-        return sortDirection === "asc" ? aValue - bValue : bValue - aValue;
+      if (errCount > 0) {
+        toast.error(`Failed to delete ${errCount} task(s). You may only delete your own.`);
+      } else {
+        toast.success(`Deleted ${selectedRows.size} task(s)`);
       }
-
-      if (typeof aValue === "boolean" && typeof bValue === "boolean") {
-        return sortDirection === "asc"
-          ? Number(aValue) - Number(bValue)
-          : Number(bValue) - Number(aValue);
-      }
-
-      return 0;
+      setSelectedRows(new Set());
     });
-
-    return sorted;
-  }, [tasks, sortKey, sortDirection]);
+  };
 
   function openComments(taskId: string) {
     const task = tasks.find((t) => t.id === taskId);
@@ -163,25 +170,93 @@ export function DataTable({ tasks, currentUserId, sprintName, columnDefs }: Data
     setCommentsOpen(true);
   }
 
-  return (
-    <div className="flex flex-col h-full space-y-4">
-      {/* Filter toolbar */}
-      <DataTableToolbar tasks={sortedTasks} sprintName={sprintName} columnDefs={columnDefs} />
+  if (!isLoaded) {
+    return (
+      <div className="flex h-[450px] items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
-      {/* Table — Excel-style grid layout */}
-      <div className="relative border border-[#4F62C0]/30 overflow-x-auto shadow-xl bg-neutral-950">
-        <Table className="table-fixed min-w-max border-collapse">
-          <TableHeader>
-            <TableRow className="bg-[#4F62C0] hover:bg-[#4F62C0] border-b-0 border-[#4F62C0]/50">
-              {columns.map((col) => {
-                const width = columnWidths[col.key] || col.def.width_px || 120;
-                return (
-                  <TableHead
-                    key={col.key}
-                    className="text-white relative group h-10 p-0 border-r border-[#ffffff20] last:border-r-0"
-                    style={{ width: `${width}px` }}
-                  >
-                    <div className="truncate px-2 flex items-center h-full">
+  // ─── Empty State (no table, no pagination) ───
+  if (tasks.length === 0 && totalCount === 0) {
+    return (
+      <div className="flex w-full flex-col gap-2.5 overflow-auto p-1">
+        {/* Toolbar always shown so user can adjust filters */}
+        <DataTableToolbar
+          tasks={tasks}
+          sprintName={sprintName}
+          columnDefs={columnDefs}
+          preferences={preferences}
+          updatePreference={updatePreference}
+        />
+
+        {/* Empty state card */}
+        <div className="rounded-md border border-border">
+          <div className="flex h-[450px] flex-col items-center justify-center gap-4 text-center">
+            <div className="rounded-full bg-muted p-4">
+              <Inbox className="h-10 w-10 text-muted-foreground" />
+            </div>
+            <div className="space-y-1.5">
+              <h3 className="text-lg font-semibold text-foreground">No tasks found</h3>
+              <p className="text-sm text-muted-foreground max-w-[420px]">
+                Try adjusting your filters, changing the sprint, or add a new task to get started.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <CommentsDialog
+          taskId={selectedTaskId}
+          taskKey={selectedTaskKey}
+          currentUserId={currentUserId}
+          open={commentsOpen}
+          onOpenChange={setCommentsOpen}
+        />
+      </div>
+    );
+  }
+
+  const allSelected = selectedRows.size === tasks.length && tasks.length > 0;
+  const someSelected = selectedRows.size > 0 && selectedRows.size < tasks.length;
+
+  return (
+    <div className="flex w-full flex-col gap-2.5 overflow-auto p-1">
+      {/* ─── Toolbar ─── */}
+      <DataTableToolbar
+        tasks={tasks}
+        sprintName={sprintName}
+        columnDefs={columnDefs}
+        preferences={preferences}
+        updatePreference={updatePreference}
+      />
+
+      {/* ─── Table ─── */}
+      <div className="rounded-md border border-border overflow-hidden">
+        <div className="relative w-full overflow-x-auto">
+          <Table className="table-fixed min-w-max">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent border-b">
+                {/* Select-all checkbox */}
+                <TableHead
+                  className="h-10 w-[40px] px-2 align-middle [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]"
+                >
+                  <Checkbox
+                    checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                    onCheckedChange={(c) => handleSelectAll(!!c)}
+                    aria-label="Select all"
+                  />
+                </TableHead>
+
+                {/* Dynamic column headers */}
+                {columns.map((col) => {
+                  const width = preferences[col.key]?.width || col.def.width_px || 120;
+                  return (
+                    <TableHead
+                      key={col.key}
+                      className="h-10 whitespace-nowrap px-2 text-left align-middle font-medium text-foreground relative group"
+                      style={{ width: `${width}px`, minWidth: `${Math.min(width, 80)}px` }}
+                    >
                       {col.sortable ? (
                         <SortableHeader
                           label={col.label}
@@ -194,101 +269,131 @@ export function DataTable({ tasks, currentUserId, sprintName, columnDefs }: Data
                       ) : col.tooltip ? (
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <span className="text-xs font-semibold uppercase tracking-wider cursor-default">
+                            <span className="text-sm font-medium cursor-default">
                               {col.label}
                             </span>
                           </TooltipTrigger>
-                          <TooltipContent className="bg-neutral-800 border-neutral-700 text-neutral-200">
-                            {col.tooltip}
-                          </TooltipContent>
+                          <TooltipContent>{col.tooltip}</TooltipContent>
                         </Tooltip>
                       ) : (
-                        <span className="text-xs font-semibold uppercase tracking-wider">
-                          {col.label}
-                        </span>
+                        <span className="text-sm font-medium">{col.label}</span>
                       )}
-                    </div>
-                    
-                    {/* Resize handle */}
-                    <div
-                      className={`absolute right-0 top-0 w-1 h-full cursor-col-resize hover:bg-white/30 z-10 ${isResizing === col.key ? "bg-white/50" : ""}`}
-                      onMouseDown={(e) => onMouseDown(e, col.key)}
-                    />
-                  </TableHead>
-                );
-              })}
-              <TableHead className="w-[50px] sticky right-0 bg-[#4F62C0] border-l border-[#ffffff20] p-0" />
-            </TableRow>
-          </TableHeader>
-          <TableBody className="bg-neutral-900/50">
-            {sortedTasks.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={columns.length + 1}
-                  className="h-[200px] text-center border-b border-neutral-800"
-                >
-                  <div className="flex flex-col items-center justify-center gap-2 text-neutral-500">
-                    <Inbox className="w-10 h-10" />
-                    <p className="text-sm">No tasks found</p>
-                    <p className="text-xs">
-                      Try adjusting your filters or add a new task.
-                    </p>
-                  </div>
-                </TableCell>
+
+                      {/* Resize handle */}
+                      <div
+                        className={`absolute right-0 top-0 w-[3px] h-full cursor-col-resize opacity-0 group-hover:opacity-100 transition-opacity ${
+                          isResizing === col.key
+                            ? "opacity-100 bg-primary"
+                            : "hover:bg-border"
+                        }`}
+                        onMouseDown={(e) => onMouseDown(e, col.key, width)}
+                      />
+                    </TableHead>
+                  );
+                })}
+
+                {/* Actions column */}
+                <TableHead className="h-10 w-[50px] px-2" />
               </TableRow>
-            ) : (
-              sortedTasks.map((task) => {
+            </TableHeader>
+
+            <TableBody>
+              {tasks.map((task) => {
                 const isOwner = task.owner_id === currentUserId;
+                const isSelected = selectedRows.has(task.id);
 
                 return (
                   <TableRow
                     key={task.id}
-                    className="border-b border-neutral-800/80 hover:bg-neutral-800 transition-colors group/row"
+                    data-state={isSelected ? "selected" : undefined}
+                    className="border-b transition-colors data-[state=selected]:bg-muted/50 hover:bg-muted/40"
                   >
-                    {columns.map((col) => (
-                      <TableCell 
-                        key={col.key} 
-                        style={{ width: `${columnWidths[col.key] || col.def.width_px || 120}px` }}
-                        className="truncate overflow-hidden p-1 px-2 border-r border-neutral-800/50 last:border-r-0 h-10"
-                      >
-                        {col.render(task, isOwner, handleEditCell)}
-                      </TableCell>
-                    ))}
-                    <TableCell className="sticky right-0 bg-neutral-900 group-hover/row:bg-neutral-800 border-l border-neutral-800 p-0 text-center transition-colors">
-                      <div className="flex items-center justify-center h-full">
-                        {isPending ? (
-                          <Loader2 className="w-4 h-4 animate-spin text-neutral-500" />
-                        ) : (
-                          <RowActions
-                            task={task}
-                            isOwner={isOwner}
-                            onOpenComments={openComments}
-                          />
-                        )}
-                      </div>
+                    {/* Row checkbox */}
+                    <TableCell className="w-[40px] whitespace-nowrap p-2 align-middle [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]">
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={(c) => handleSelectRow(task.id, !!c)}
+                        aria-label={`Select ${task.jira_key}`}
+                      />
+                    </TableCell>
+
+                    {/* Data cells */}
+                    {columns.map((col) => {
+                      const width = preferences[col.key]?.width || col.def.width_px || 120;
+                      return (
+                        <TableCell
+                          key={col.key}
+                          style={{ width: `${width}px`, minWidth: `${Math.min(width, 80)}px` }}
+                          className="whitespace-nowrap p-2 align-middle"
+                        >
+                          {col.render(task, isOwner, handleEditCell)}
+                        </TableCell>
+                      );
+                    })}
+
+                    {/* Row actions */}
+                    <TableCell className="w-[50px] whitespace-nowrap p-2 align-middle">
+                      {isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mx-auto" />
+                      ) : (
+                        <RowActions
+                          task={task}
+                          isOwner={isOwner}
+                          onOpenComments={openComments}
+                        />
+                      )}
                     </TableCell>
                   </TableRow>
                 );
-              })
-            )}
-          </TableBody>
-        </Table>
+              })}
+            </TableBody>
+          </Table>
+        </div>
       </div>
 
-      {/* Task count footer */}
-      <div className="flex items-center justify-between text-xs text-neutral-500">
-        <span>
-          Showing {sortedTasks.length} task{sortedTasks.length !== 1 ? "s" : ""}
-        </span>
-        {sortedTasks.length > 0 && (
-          <span>
-            Total SP:{" "}
-            {sortedTasks
-              .reduce((sum, t) => sum + (Number(t.custom_fields?.story_points) || 0), 0)
-              .toFixed(1)}
-          </span>
-        )}
-      </div>
+      {/* ─── Pagination ─── */}
+      <DataTablePagination totalCount={totalCount} selectedCount={selectedRows.size} />
+
+      {/* ─── Floating Selection Action Bar (TableCN style) ─── */}
+      {selectedRows.size > 0 && (
+        <div className="fixed inset-x-0 bottom-6 z-50 mx-auto w-fit">
+          <div className="flex items-center gap-4 rounded-lg border bg-background px-4 py-2.5 shadow-2xl">
+            <span className="text-sm text-muted-foreground whitespace-nowrap">
+              <span className="font-semibold tabular-nums text-foreground">{selectedRows.size}</span>
+              {" "}of{" "}
+              <span className="font-semibold tabular-nums text-foreground">{tasks.length}</span>
+              {" "}row(s) selected
+            </span>
+
+            <div className="h-4 w-px bg-border" />
+
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleBulkDelete}
+              disabled={isPending}
+              className="gap-1.5"
+            >
+              {isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-3.5 w-3.5" />
+              )}
+              Delete
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => setSelectedRows(new Set())}
+            >
+              <X className="h-3.5 w-3.5" />
+              <span className="sr-only">Clear selection</span>
+            </Button>
+          </div>
+        </div>
+      )}
 
       <CommentsDialog
         taskId={selectedTaskId}

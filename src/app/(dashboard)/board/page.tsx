@@ -31,6 +31,10 @@ interface BoardPageProps {
     priority?: string;
     status?: string;
     search?: string;
+    page?: string;
+    per_page?: string;
+    sort?: string;
+    dir?: "asc" | "desc";
   }>;
 }
 
@@ -60,13 +64,17 @@ async function BoardContent({ searchParams }: BoardPageProps) {
   const selectedSprint = sprints.find((s) => s.sprint_id === selectedSprintId);
 
   // Build the filter object from URL search params
-  const tasks = await fetchTasks({
+  const { data: tasks, count: totalCount } = await fetchTasks({
     project_id: activeProjectId || null,
     sprint_id: params.sprint === "all" ? null : selectedSprintId,
     work_type: params.type || null,
     priority: params.priority || null,
     status: params.status || null,
     search: params.search || "",
+    page: params.page ? parseInt(params.page, 10) : 1,
+    per_page: params.per_page ? parseInt(params.per_page, 10) : 25,
+    sort_key: params.sort || "updated_at",
+    sort_dir: params.dir || "desc",
   });
 
   let columnDefs = activeProjectId ? await fetchColumnDefinitions(activeProjectId) : [];
@@ -80,9 +88,11 @@ async function BoardContent({ searchParams }: BoardPageProps) {
   return (
     <DataTable
       tasks={tasks}
+      totalCount={totalCount}
       currentUserId={user.id}
       sprintName={selectedSprint?.sprint_name}
       columnDefs={columnDefs}
+      projectId={activeProjectId}
     />
   );
 }

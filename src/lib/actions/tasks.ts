@@ -6,17 +6,17 @@ import type { ProjectTask, TaskFilters, SprintOption } from "@/lib/types";
 import { isDemoModeActive, getMockTasks, getMockSprints, updateMockTask, deleteMockTask, addDemoTask } from "@/lib/demo-mode";
 
 // ─── Fetch tasks with optional filters ───
-export async function fetchTasks(filters: TaskFilters = {}): Promise<ProjectTask[]> {
+export async function fetchTasks(filters: TaskFilters = {}): Promise<{ data: ProjectTask[], count: number }> {
   if (await isDemoModeActive()) {
-    return getMockTasks(filters.project_id, filters.sprint_id);
+    const mockTasks = getMockTasks(filters.project_id, filters.sprint_id);
+    return { data: mockTasks, count: mockTasks.length };
   }
 
   const supabase = await createClient();
 
   let query = supabase
     .from("project_tasks")
-    .select("*")
-    .order("updated_at", { ascending: false });
+    .select("*", { count: "exact" });
 
   if (filters.project_id) {
     query = query.eq("project_id", filters.project_id);
@@ -49,14 +49,39 @@ export async function fetchTasks(filters: TaskFilters = {}): Promise<ProjectTask
     }
   }
 
-  const { data, error } = await query;
+  // Sorting
+  const sortKey = filters.sort_key || "updated_at";
+  const sortDir = filters.sort_dir || "desc";
+  const ascending = sortDir === "asc";
+
+  const coreFields = ["id", "project_id", "owner_id", "jira_key", "sprint_id", "sprint_name", "sprint_start_date", "sprint_end_date", "created_at", "updated_at"];
+  
+  if (coreFields.includes(sortKey)) {
+    query = query.order(sortKey, { ascending });
+  } else {
+    // Note: sorting on JSONB values using postgrest can be done via computed columns or in-memory
+    // If the database supports JSONB indexing, you can do: order("custom_fields->>key")
+    // Let's rely on standard order if possible, or fallback to updated_at if not.
+    // supabase syntax for jsonb order: `custom_fields->>${sortKey}` isn't directly supported by standard `.order` without raw sql or a view.
+    // For now we will order by updated_at and sort client side if needed, or if we have a view.
+    query = query.order("updated_at", { ascending: false });
+  }
+
+  // Pagination
+  if (filters.page !== undefined && filters.per_page !== undefined) {
+    const from = (filters.page - 1) * filters.per_page;
+    const to = from + filters.per_page - 1;
+    query = query.range(from, to);
+  }
+
+  const { data, count, error } = await query;
 
   if (error) {
     console.error("Failed to fetch tasks:", error.message);
-    return [];
+    return { data: [], count: 0 };
   }
 
-  return (data as ProjectTask[]) || [];
+  return { data: (data as ProjectTask[]) || [], count: count || 0 };
 }
 
 // ─── Get list of unique sprints for the dropdown selector ───

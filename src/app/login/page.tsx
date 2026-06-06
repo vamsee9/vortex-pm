@@ -104,12 +104,15 @@ export default function LoginPage() {
             <BarChart3 className="w-6 h-6 text-emerald-500" />
           </div>
           <div>
-            <CardTitle className="text-xl text-neutral-100">
-              Sprint Metrics Dashboard
-            </CardTitle>
-            <CardDescription className="text-neutral-400 mt-1">
-              Sign in with your credentials provided by your admin
-            </CardDescription>
+            <h1 className="text-2xl font-semibold tracking-tight text-neutral-100">
+              Vortex
+            </h1>
+            <p className="text-sm text-emerald-400 font-medium tracking-wide uppercase">
+              Plan. Track. Deliver.
+            </p>
+            <p className="text-sm text-neutral-400 mt-2">
+              Sign in to manage your sprints and metrics
+            </p>
           </div>
         </CardHeader>
 

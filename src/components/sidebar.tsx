@@ -11,7 +11,7 @@
  * - Team Management (admin/moderator only)
  * - Configurations (admin/moderator only)
  *
- * The collapse toggle sits next to the "Sprint Metrics" title
+ * The collapse toggle sits next to the "Vortex" title
  * for a compact, intuitive header layout.
  */
 
@@ -38,6 +38,7 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
+  PieChart,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -60,9 +61,9 @@ const navItems = [
     requireProject: true,
   },
   {
-    label: "QBR Presentation",
-    href: "/qbr",
-    icon: Presentation,
+    label: "Reporting",
+    href: "/reporting",
+    icon: PieChart,
     allowedRoles: undefined,
     tooltip: "Charts and sprint analytics",
     requireProject: true,
@@ -78,15 +79,15 @@ const navItems = [
     label: "Team Management",
     href: "/admin",
     icon: Shield,
-    allowedRoles: ["admin", "moderator"] as string[],
-    tooltip: "Add or manage team members",
-    requireProject: true,
+    allowedRoles: ["owner"],
+    tooltip: "Add or manage platform team members",
+    requireProject: false,
   },
   {
     label: "Configurations",
     href: "/settings",
     icon: Settings,
-    allowedRoles: ["admin", "moderator"] as string[],
+    allowedRoles: ["admin", "moderator", "owner"],
     tooltip: "Metadata, integrations, and app settings",
     requireProject: true,
   },
@@ -127,9 +128,14 @@ export function Sidebar({ userEmail, userName, userRole, activeProjectId }: Side
             <BarChart3 className="w-4 h-4 text-emerald-500" />
           </div>
           {!collapsed && (
-            <span className="text-sm font-semibold text-neutral-200 truncate">
-              Sprint Metrics
-            </span>
+            <div className="flex flex-col min-w-0">
+              <span className="text-sm font-semibold text-neutral-200 truncate">
+                Vortex
+              </span>
+              <span className="text-[10px] text-emerald-400 font-medium tracking-wide uppercase truncate">
+                Plan. Track. Deliver.
+              </span>
+            </div>
           )}
         </div>
 

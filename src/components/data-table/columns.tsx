@@ -61,14 +61,21 @@ export interface DataTableColumnDef {
   ) => React.ReactNode;
 }
 
+import type { ColumnPreference } from "./use-column-preferences";
+
 // ─── Dynamic Column Builder ───
 export function buildColumnsFromDefinitions(
-  columnDefs: ColumnDefinition[]
+  columnDefs: ColumnDefinition[],
+  preferences?: Record<string, ColumnPreference>
 ): DataTableColumnDef[] {
   // Sort columns by display_order, filter out invisible ones
   const visibleDefs = columnDefs
-    .filter(c => c.is_visible)
-    .sort((a, b) => a.display_order - b.display_order);
+    .filter(c => preferences ? preferences[c.key]?.isVisible !== false : c.is_visible)
+    .sort((a, b) => {
+      const orderA = preferences ? preferences[a.key]?.order ?? a.display_order : a.display_order;
+      const orderB = preferences ? preferences[b.key]?.order ?? b.display_order : b.display_order;
+      return orderA - orderB;
+    });
 
   const columns: DataTableColumnDef[] = [];
 
@@ -76,11 +83,12 @@ export function buildColumnsFromDefinitions(
   // (We could also make jira_key a required custom field)
   
   for (const def of visibleDefs) {
+    const widthPx = preferences ? preferences[def.key]?.width ?? def.width_px : def.width_px;
     columns.push({
       key: def.key,
       label: def.label,
       sortable: def.is_sortable,
-      width: `w-[${def.width_px}px]`,
+      width: `w-[${widthPx}px]`,
       tooltip: def.tooltip || undefined,
       def,
       render: (task, isOwner, onEdit) => {
@@ -95,7 +103,7 @@ export function buildColumnsFromDefinitions(
                 <Checkbox
                   checked={!!val}
                   disabled
-                  className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
+                  className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
                 />
               </div>
             );
@@ -142,7 +150,7 @@ export function buildColumnsFromDefinitions(
                       onEdit(task.id, def.key, !!checked);
                     }
                   }}
-                  className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
+                  className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
                 />
               </div>
             );
@@ -152,9 +160,9 @@ export function buildColumnsFromDefinitions(
             const opt = def.options?.find(o => o.value === val);
             // Default styling if no explicit color
             let colorStyle = {
-              backgroundColor: opt?.color ? `${opt.color}1a` : "rgba(107, 114, 128, 0.1)",
-              color: opt?.color || "#9ca3af",
-              borderColor: opt?.color ? `${opt.color}33` : "rgba(107, 114, 128, 0.2)"
+              backgroundColor: opt?.color ? `${opt.color}1a` : "hsl(var(--muted))",
+              color: opt?.color || "hsl(var(--muted-foreground))",
+              borderColor: opt?.color ? `${opt.color}33` : "hsl(var(--border))"
             };
 
             // Custom UI override for priority
@@ -163,7 +171,7 @@ export function buildColumnsFromDefinitions(
                 <CellEditor def={def} value={val} onSave={(newVal) => onEdit(task.id, def.key, newVal)}>
                   <div className="flex items-center gap-1.5 cursor-pointer">
                     <PriorityIcon priority={val as string} />
-                    <span className="text-sm text-neutral-300">{val || "—"}</span>
+                    <span className="text-sm text-foreground">{val || "—"}</span>
                   </div>
                 </CellEditor>
               );
@@ -174,7 +182,7 @@ export function buildColumnsFromDefinitions(
                 <Badge 
                   variant="secondary" 
                   style={colorStyle}
-                  className="cursor-pointer font-medium rounded-none border"
+                  className="cursor-pointer font-medium rounded-sm border"
                 >
                   {val || "—"}
                 </Badge>
@@ -193,24 +201,24 @@ export function buildColumnsFromDefinitions(
                         {assignees.slice(0, 3).map((name: string, idx: number) => (
                           <div
                             key={idx}
-                            className="w-6 h-6 rounded-full bg-neutral-700 border-2 border-neutral-900 flex items-center justify-center text-[10px] text-neutral-300 font-medium"
+                            className="w-6 h-6 rounded-full bg-muted border-2 border-background flex items-center justify-center text-[10px] text-muted-foreground font-medium"
                           >
                             {name.charAt(0).toUpperCase()}
                           </div>
                         ))}
                         {assignees.length > 3 && (
-                          <div className="w-6 h-6 rounded-full bg-neutral-600 border-2 border-neutral-900 flex items-center justify-center text-[10px] text-neutral-300">
+                          <div className="w-6 h-6 rounded-full bg-muted border-2 border-background flex items-center justify-center text-[10px] text-muted-foreground">
                             +{assignees.length - 3}
                           </div>
                         )}
                       </div>
                     </TooltipTrigger>
-                    <TooltipContent className="bg-neutral-800 border-neutral-700 text-neutral-200">
+                    <TooltipContent>
                       {assignees.join(", ")}
                     </TooltipContent>
                   </Tooltip>
                 ) : (
-                  <span className="text-xs text-neutral-500">Unassigned</span>
+                  <span className="text-xs text-muted-foreground">Unassigned</span>
                 )}
               </div>
             );
@@ -219,7 +227,7 @@ export function buildColumnsFromDefinitions(
           case "number":
             return (
               <CellEditor def={def} value={val} onSave={(newVal) => onEdit(task.id, def.key, newVal)}>
-                <span className="text-sm text-neutral-300 font-mono cursor-pointer">
+                <span className="text-sm text-foreground font-mono cursor-pointer">
                   {val !== null && val !== undefined ? val : "—"}
                 </span>
               </CellEditor>
@@ -231,12 +239,12 @@ export function buildColumnsFromDefinitions(
               <CellEditor def={def} value={val} onSave={(newVal) => onEdit(task.id, def.key, newVal)}>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className="text-sm text-neutral-200 truncate block cursor-pointer">
+                    <span className="text-sm text-foreground truncate block cursor-pointer">
                       {val || "—"}
                     </span>
                   </TooltipTrigger>
                   {val && (
-                    <TooltipContent side="bottom" className="max-w-sm bg-neutral-800 border-neutral-700 text-neutral-200">
+                    <TooltipContent side="bottom" className="max-w-sm">
                       {val}
                     </TooltipContent>
                   )}
@@ -251,7 +259,7 @@ export function buildColumnsFromDefinitions(
   return columns;
 }
 
-// ─── Sortable column header ───
+// ─── Sortable column header (TableCN style) ───
 export function SortableHeader({
   label,
   sortKey,
@@ -269,16 +277,24 @@ export function SortableHeader({
 }) {
   const isActive = currentSort === sortKey;
 
+  const SortIcon = isActive
+    ? currentDirection === "asc"
+      ? ArrowUp
+      : ArrowDown
+    : ArrowUpDown;
+
   const button = (
     <Button
       variant="ghost"
       size="sm"
       onClick={() => onSort(sortKey)}
-      className="text-neutral-200 hover:text-white -ml-3 font-medium uppercase text-xs rounded-none h-8 px-2 tracking-wider"
+      className="-ml-3 h-8 px-2 text-sm font-medium data-[state=open]:bg-accent"
     >
       {label}
-      <ArrowUpDown
-        className={`ml-1 w-3.5 h-3.5 ${isActive ? "text-emerald-400" : "text-neutral-400"}`}
+      <SortIcon
+        className={`ml-1.5 h-3.5 w-3.5 ${
+          isActive ? "text-foreground" : "text-muted-foreground"
+        }`}
       />
     </Button>
   );
@@ -287,9 +303,7 @@ export function SortableHeader({
     return (
       <Tooltip>
         <TooltipTrigger asChild>{button}</TooltipTrigger>
-        <TooltipContent className="bg-neutral-800 border-neutral-700 text-neutral-200">
-          {tooltip}
-        </TooltipContent>
+        <TooltipContent>{tooltip}</TooltipContent>
       </Tooltip>
     );
   }

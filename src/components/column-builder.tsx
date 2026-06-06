@@ -57,6 +57,7 @@ export function ColumnBuilder({ projectId, initialFieldMappings = {} }: ColumnBu
         is_filterable: newType === "select",
         is_editable: true,
         is_visible: true,
+        is_reportable: false,
       });
       if (res.success && res.data) {
         setColumns([...columns, res.data]);
@@ -160,7 +161,7 @@ export function ColumnBuilder({ projectId, initialFieldMappings = {} }: ColumnBu
           <div key={col.id} className="flex items-center gap-4 bg-neutral-900/40 border border-neutral-800 p-3 rounded-lg group">
             <GripVertical className="w-4 h-4 text-neutral-600 cursor-grab" />
             
-            <div className="flex-1 grid grid-cols-5 gap-4 items-center">
+              <div className="flex-1 grid grid-cols-7 gap-4 items-center">
               <div>
                 <p className="text-sm font-medium text-neutral-200">{col.label}</p>
                 <p className="text-xs text-neutral-500 font-mono">{col.key}</p>
@@ -185,6 +186,22 @@ export function ColumnBuilder({ projectId, initialFieldMappings = {} }: ColumnBu
                   disabled={col.is_system && col.auto_source === "computed"}
                 />
                 <span className="text-xs text-neutral-400">Editable</span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Checkbox 
+                  checked={col.is_filterable} 
+                  onCheckedChange={v => handleToggle(col.id, "is_filterable", !!v)}
+                />
+                <span className="text-xs text-neutral-400">Filterable</span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Checkbox 
+                  checked={col.is_reportable} 
+                  onCheckedChange={v => handleToggle(col.id, "is_reportable", !!v)}
+                />
+                <span className="text-xs text-neutral-400">Reportable</span>
               </div>
               
               <div className="flex justify-end gap-2">
