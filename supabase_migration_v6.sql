@@ -12,6 +12,7 @@
 ALTER TABLE projects
   ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'active';
 
+ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_status_check;
 ALTER TABLE projects
   ADD CONSTRAINT projects_status_check
   CHECK (status IN ('draft', 'active', 'archived'));
